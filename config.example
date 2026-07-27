@@ -33,6 +33,9 @@
 # Show the recording pill overlay (needs quickshell)
 #OVERLAY="true"
 
+# Where the pill appears: "bottom" or "top"
+#OVERLAY_POSITION="bottom"
+
 # Safety limit: auto-stop after this many seconds of recording
 #MAX_RECORD_SECONDS="120"
 

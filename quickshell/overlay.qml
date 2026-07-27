@@ -28,6 +28,7 @@ ShellRoot {
     Component.onCompleted: shown = true   // flips after Behaviors are active -> slide-in animates
 
     readonly property bool hasSymbols: Qt.fontFamilies().includes("Material Symbols Rounded")
+    readonly property bool atTop: (Quickshell.env("OHW_OVERLAY_POSITION") || "bottom") === "top"
 
     // ------------------------------------------------------------------ theme
     property var colors: ({})
@@ -143,9 +144,13 @@ ShellRoot {
             WlrLayershell.namespace: "openhyprwhisper"
             WlrLayershell.layer: WlrLayer.Overlay
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-            exclusionMode: ExclusionMode.Ignore
-            anchors { top: true; left: true; right: true }
-            margins.top: 16
+            // reserve no space ourselves, but respect the bar's exclusive
+            // zone so the pill lands above/below it instead of overlapping
+            exclusionMode: ExclusionMode.Normal
+            exclusiveZone: 0
+            anchors { top: root.atTop; bottom: !root.atTop; left: true; right: true }
+            margins.top: 12
+            margins.bottom: 12
             color: "transparent"
             mask: Region {}   // fully click-through
 
@@ -167,7 +172,10 @@ ShellRoot {
             Rectangle {
                 id: pill
                 anchors.horizontalCenter: parent.horizontalCenter
-                y: (root.exiting || !root.shown) ? -height - 24 : 8
+                // slides in from (and out through) the nearest screen edge
+                y: root.atTop
+                    ? ((root.exiting || !root.shown) ? -height - 24 : 8)
+                    : ((root.exiting || !root.shown) ? parent.height + 24 : parent.height - height - 8)
                 width: content.implicitWidth + 40
                 height: 42
                 radius: height / 2

@@ -36,6 +36,7 @@ THREADS="$(nproc)"            # CPU threads for whisper
 AUDIO_SOURCE=""               # pipewire target, empty = default mic
 RECORD_ARGS=""                # extra pw-record args (word-split), e.g. "-P stream.capture.sink=true"
 OVERLAY="true"                # show the recording pill overlay
+OVERLAY_POSITION="bottom"     # top | bottom
 MAX_RECORD_SECONDS="120"      # hard stop safety limit
 SILENCE_PEAK="300"            # skip transcription if peak frame RMS is below this (0 = off)
 INITIAL_PROMPT=""             # bias vocabulary, e.g. project jargon
@@ -49,6 +50,7 @@ INJECT="${OHW_INJECT:-$INJECT}"
 AUDIO_SOURCE="${OHW_AUDIO_SOURCE:-$AUDIO_SOURCE}"
 RECORD_ARGS="${OHW_RECORD_ARGS:-$RECORD_ARGS}"
 OVERLAY="${OHW_OVERLAY:-$OVERLAY}"
+OVERLAY_POSITION="${OHW_OVERLAY_POSITION:-$OVERLAY_POSITION}"
 
 STATE_FILE="$RUNTIME_DIR/state.json"
 WAV_FILE="$RUNTIME_DIR/audio.wav"
@@ -94,7 +96,8 @@ overlay_start() {
     [ "$OVERLAY" = "true" ] || return 0
     command -v qs >/dev/null || return 0
     pgrep -f "qs -p $OHW_ROOT/quickshell/overlay.qml" >/dev/null && return 0
-    OHW_BIN="$OHW_ROOT/bin/ohw" setsid qs -p "$OHW_ROOT/quickshell/overlay.qml" >/dev/null 2>&1 9>&- &
+    OHW_BIN="$OHW_ROOT/bin/ohw" OHW_OVERLAY_POSITION="$OVERLAY_POSITION" \
+        setsid qs -p "$OHW_ROOT/quickshell/overlay.qml" >/dev/null 2>&1 9>&- &
 }
 
 overlay_kill() {
