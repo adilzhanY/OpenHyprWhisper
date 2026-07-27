@@ -51,6 +51,7 @@ echo "whisper.cpp: built"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/openhyprwhisper"
 mkdir -p "$CONFIG_DIR"
 [ -f "$CONFIG_DIR/config" ] || cp config.example "$CONFIG_DIR/config"
+[ -f "$CONFIG_DIR/replacements" ] || cp replacements.example "$CONFIG_DIR/replacements"
 
 # 4. CLI on PATH --------------------------------------------------------------
 mkdir -p "$HOME/.local/bin"

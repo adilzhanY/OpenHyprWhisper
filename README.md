@@ -78,6 +78,10 @@ systemctl --user enable --now openhyprwhisper
 model, language (`auto` by default), inject mode (`type` / `paste` / `clipboard`),
 trailing space, daemon port, audio source, max recording length, vocabulary prompt.
 
+`~/.config/openhyprwhisper/replacements` (see [replacements.example](replacements.example)):
+deterministic fixes for words the model consistently mishears, e.g.
+`cloud code = Claude Code`. Case-insensitive, word-boundary matched.
+
 ## Theming
 
 The overlay reads, live:

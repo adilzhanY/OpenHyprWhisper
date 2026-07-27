@@ -206,6 +206,21 @@ transcribe() { # -> prints transcribed text
         -t "$THREADS" --no-prints --no-timestamps 2>>"$LOG_FILE"
 }
 
+apply_replacements() { # stdin -> stdout; user rules fix stubborn mishearings
+    local rules="$CONFIG_DIR/replacements"
+    [ -f "$rules" ] || { cat; return; }
+    python3 -c '
+import re, sys
+text = sys.stdin.read()
+for line in open(sys.argv[1], encoding="utf-8"):
+    line = line.strip()
+    if not line or line.startswith("#") or "=" not in line:
+        continue
+    src, dst = (s.strip() for s in line.split("=", 1))
+    text = re.sub(r"\b" + re.escape(src) + r"\b", dst, text, flags=re.IGNORECASE)
+sys.stdout.write(text)' "$rules"
+}
+
 clean_text() { # strip whisper artifacts: [BLANK_AUDIO], (wind blowing), *music*, whitespace
     # strip [BLANK_AUDIO]-style tags and *music* markers, but keep normal
     # parentheses the user actually dictated - only drop all-noise (...) lines
@@ -272,7 +287,7 @@ cmd_stop() {
 
     local t0 t1 text
     t0=$(date +%s%3N)
-    text=$(transcribe | clean_text) || {
+    text=$(transcribe | clean_text | apply_replacements) || {
         write_state empty
         die "transcription failed (see $LOG_FILE)"
     }

@@ -1,0 +1,15 @@
+# OpenHyprWhisper replacement rules
+# Copy to ~/.config/openhyprwhisper/replacements
+#
+# Format: misheard text = corrected text   (one per line, case-insensitive,
+# matched on word boundaries, applied after transcription).
+# Use this for words the model consistently gets wrong - brand names,
+# near-homophones, your own project names.
+
+cloud code = Claude Code
+chat gpt = ChatGPT
+open hyper whisper = OpenHyprWhisper
+open hyper whisperer = OpenHyprWhisper
+hyper land = Hyprland
+quick shell = Quickshell
+new vim = Neovim
