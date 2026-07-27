@@ -93,7 +93,7 @@ overlay_start() {
     [ "$OVERLAY" = "true" ] || return 0
     command -v qs >/dev/null || return 0
     pgrep -f "qs -p $OHW_ROOT/quickshell/overlay.qml" >/dev/null && return 0
-    setsid qs -p "$OHW_ROOT/quickshell/overlay.qml" >/dev/null 2>&1 9>&- &
+    OHW_BIN="$OHW_ROOT/bin/ohw" setsid qs -p "$OHW_ROOT/quickshell/overlay.qml" >/dev/null 2>&1 9>&- &
 }
 
 overlay_kill() {

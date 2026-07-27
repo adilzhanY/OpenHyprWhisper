@@ -24,6 +24,10 @@ ShellRoot {
     property var levels: Array(barCount).fill(0)
     readonly property int barCount: 16
     property bool exiting: false
+    property bool shown: false
+    Component.onCompleted: shown = true   // flips after Behaviors are active -> slide-in animates
+
+    readonly property bool hasSymbols: Qt.fontFamilies().includes("Material Symbols Rounded")
 
     // ------------------------------------------------------------------ theme
     property var colors: ({})
@@ -86,24 +90,33 @@ ShellRoot {
     // ------------------------------------------------------------- mic meter
     Process {
         id: meter
-        command: [Quickshell.env("HOME") + "/dev/OpenHyprWhisper/bin/ohw", "meter"]
+        command: [Quickshell.env("OHW_BIN") || (Quickshell.shellDir + "/../bin/ohw"), "meter"]
         running: root.ohwState === "recording"
+        onExited: root.levels = Array(root.barCount).fill(0)
         stdout: SplitParser {
             onRead: data => {
-                const v = parseFloat(data);
-                if (!isNaN(v)) {
-                    const next = root.levels.slice(1);
-                    next.push(v);
-                    root.levels = next;
-                }
+                const v = Math.min(1, parseFloat(data));
+                if (isNaN(v)) return;
+                const next = root.levels.slice(1);
+                // one-pole smoothing: the data rate provides the motion, no
+                // per-bar Behavior animations needed
+                next.push(root.levels[root.barCount - 1] * 0.3 + v * 0.7);
+                root.levels = next;
             }
         }
     }
 
     Timer {
-        interval: 1000; repeat: true
+        interval: 1000; repeat: true; triggeredOnStart: true
         running: root.ohwState === "recording"
         onTriggered: root.elapsed = Math.floor((Date.now() - root.startedAt) / 1000)
+    }
+
+    // backstop: if ohw crashes mid-recording nothing would ever end the pill
+    Timer {
+        interval: 180000
+        running: root.ohwState === "recording"
+        onTriggered: root.beginExit()
     }
 
     // Auto-quit choreography: hold terminal states briefly, then slide out.
@@ -124,7 +137,8 @@ ShellRoot {
             id: win
             required property var modelData
             screen: modelData
-            visible: (Hyprland.focusedMonitor?.name ?? modelData.name) === modelData.name
+            visible: Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name === modelData.name
+                                             : modelData === Quickshell.screens[0]
 
             WlrLayershell.namespace: "openhyprwhisper"
             WlrLayershell.layer: WlrLayer.Overlay
@@ -137,10 +151,23 @@ ShellRoot {
 
             implicitHeight: pill.height + 40
 
+            // cheap analytic shadow, independent of the pill's animating content
+            // (a layer + MultiEffect would re-render every frame forever here)
+            RectangularShadow {
+                anchors.fill: pill
+                radius: pill.radius
+                color: Qt.rgba(0, 0, 0, 0.45)
+                blur: 24
+                offset.y: 4
+                z: -1
+                opacity: pill.opacity
+                scale: pill.scale
+            }
+
             Rectangle {
                 id: pill
                 anchors.horizontalCenter: parent.horizontalCenter
-                y: root.exiting ? -height - 24 : 8
+                y: (root.exiting || !root.shown) ? -height - 24 : 8
                 width: content.implicitWidth + 40
                 height: 42
                 radius: height / 2
@@ -150,8 +177,6 @@ ShellRoot {
                 opacity: root.exiting ? 0 : 1
                 scale: root.exiting ? 0.92 : 1
 
-                // slide in on spawn
-                Component.onCompleted: { y = -height - 24; y = Qt.binding(() => root.exiting ? -pill.height - 24 : 8); }
                 Behavior on y {
                     NumberAnimation {
                         duration: root.exiting ? 240 : 500
@@ -165,14 +190,6 @@ ShellRoot {
                 Behavior on opacity { NumberAnimation { duration: 220 } }
                 Behavior on scale {
                     NumberAnimation { duration: 240; easing.type: Easing.BezierSpline; easing.bezierCurve: root.curveExit }
-                }
-
-                layer.enabled: true
-                layer.effect: MultiEffect {
-                    shadowEnabled: true
-                    shadowColor: Qt.rgba(0, 0, 0, 0.45)
-                    shadowBlur: 0.9
-                    shadowVerticalOffset: 4
                 }
 
                 RowLayout {
@@ -239,14 +256,18 @@ ShellRoot {
                                 running: spinner.visible; loops: Animation.Infinite
                                 from: 0; to: 360; duration: 800
                             }
+                            Connections {
+                                target: root
+                                function onAccentColChanged() { spinner.requestPaint(); }
+                            }
                         }
 
                         // check mark when done
                         Text {
                             anchors.centerIn: parent
                             visible: root.ohwState === "done"
-                            text: "check_circle"
-                            font.family: "Material Symbols Rounded"
+                            text: root.hasSymbols ? "check_circle" : "✓"
+                            font.family: root.hasSymbols ? "Material Symbols Rounded" : root.fontFamily
                             font.pixelSize: 16
                             color: root.accentCol
                             scale: visible ? 1 : 0.4
@@ -288,7 +309,6 @@ ShellRoot {
                                 anchors.verticalCenter: parent.verticalCenter
                                 color: Qt.rgba(root.textCol.r, root.textCol.g, root.textCol.b,
                                                0.35 + root.levels[index] * 0.65)
-                                Behavior on height { NumberAnimation { duration: 90 } }
                             }
                         }
                     }
