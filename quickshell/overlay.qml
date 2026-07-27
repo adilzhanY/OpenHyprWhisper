@@ -130,12 +130,11 @@ ShellRoot {
             WlrLayershell.layer: WlrLayer.Overlay
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
             exclusionMode: ExclusionMode.Ignore
-            anchors { top: true }
+            anchors { top: true; left: true; right: true }
             margins.top: 16
             color: "transparent"
             mask: Region {}   // fully click-through
 
-            implicitWidth: pill.width + 48
             implicitHeight: pill.height + 40
 
             Rectangle {
