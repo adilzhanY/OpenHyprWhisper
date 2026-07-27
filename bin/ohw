@@ -1,0 +1,322 @@
+#!/usr/bin/env bash
+# OpenHyprWhisper - system-wide voice dictation for Hyprland
+# https://github.com/adilzhanY/OpenHyprWhisper
+#
+# Usage:
+#   ohw toggle      start recording / stop & transcribe & type (bind this)
+#   ohw start       start recording
+#   ohw stop        stop recording, transcribe, type into focused window
+#   ohw cancel      stop recording and discard
+#   ohw daemon      manage the whisper-server daemon (start|stop|status|run)
+#   ohw meter       print mic RMS levels to stdout (used by the overlay)
+#   ohw setup       download the model and check dependencies
+#   ohw status      print current state
+set -euo pipefail
+
+OHW_ROOT="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.." && pwd)"
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}/openhyprwhisper"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/openhyprwhisper"
+DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/openhyprwhisper"
+MODELS_DIR="$DATA_DIR/models"
+LOG_FILE="$RUNTIME_DIR/ohw.log"
+
+mkdir -p "$RUNTIME_DIR" "$CONFIG_DIR" "$MODELS_DIR"
+
+# ---------------------------------------------------------------------------
+# Configuration (defaults, overridable in ~/.config/openhyprwhisper/config)
+# ---------------------------------------------------------------------------
+MODEL="large-v3-turbo-q5_0"   # model name (ggml-<name>.bin in models dir) or absolute path
+LANGUAGE="auto"               # whisper language code, or "auto"
+TRANSLATE="false"             # translate to English instead of transcribing
+INJECT="type"                 # type | paste | clipboard
+APPEND_SPACE="true"           # append a space after the typed text
+DAEMON="true"                 # use whisper-server to keep the model warm
+PORT="8595"                   # whisper-server port
+THREADS="$(nproc)"            # CPU threads for whisper
+AUDIO_SOURCE=""               # pipewire target, empty = default mic
+OVERLAY="true"                # show the recording pill overlay
+MAX_RECORD_SECONDS="120"      # hard stop safety limit
+INITIAL_PROMPT=""             # bias vocabulary, e.g. project jargon
+
+[ -f "$CONFIG_DIR/config" ] && . "$CONFIG_DIR/config"
+
+STATE_FILE="$RUNTIME_DIR/state.json"
+WAV_FILE="$RUNTIME_DIR/audio.wav"
+REC_PID_FILE="$RUNTIME_DIR/recorder.pid"
+DAEMON_PID_FILE="$RUNTIME_DIR/daemon.pid"
+LOCK_FILE="$RUNTIME_DIR/lock"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+log() { printf '%s %s\n' "$(date +%T)" "$*" >> "$LOG_FILE"; }
+
+die() {
+    notify-send -a OpenHyprWhisper -i microphone-sensitivity-muted "OpenHyprWhisper" "$*" 2>/dev/null || true
+    log "ERROR: $*"
+    exit 1
+}
+
+resolve_model() {
+    if [ -f "$MODEL" ]; then printf '%s' "$MODEL"; return; fi
+    local p="$MODELS_DIR/ggml-$MODEL.bin"
+    [ -f "$p" ] && { printf '%s' "$p"; return; }
+    die "Model not found: $MODEL. Run: ohw setup"
+}
+
+find_bin() { # find_bin <name> -> prefer vendored build, then PATH
+    local vendored="$OHW_ROOT/vendor/whisper.cpp/build/bin/$1"
+    if [ -x "$vendored" ]; then printf '%s' "$vendored"; return; fi
+    command -v "$1" 2>/dev/null || return 1
+}
+
+write_state() { # write_state <state>
+    printf '{"state":"%s","startedAt":%s}\n' "$1" "$(date +%s%3N)" > "$STATE_FILE.tmp"
+    mv "$STATE_FILE.tmp" "$STATE_FILE"   # atomic: the overlay watches this file
+}
+
+read_state() {
+    [ -f "$STATE_FILE" ] || { printf 'idle'; return; }
+    sed -n 's/.*"state":"\([a-z]*\)".*/\1/p' "$STATE_FILE"
+}
+
+overlay_start() {
+    [ "$OVERLAY" = "true" ] || return 0
+    command -v qs >/dev/null || return 0
+    pgrep -f "qs -p $OHW_ROOT/quickshell/overlay.qml" >/dev/null && return 0
+    setsid qs -p "$OHW_ROOT/quickshell/overlay.qml" >/dev/null 2>&1 &
+}
+
+overlay_kill() {
+    pkill -f "qs -p $OHW_ROOT/quickshell/overlay.qml" 2>/dev/null || true
+}
+
+# ---------------------------------------------------------------------------
+# Recording
+# ---------------------------------------------------------------------------
+cmd_start() {
+    [ "$(read_state)" = "recording" ] && exit 0
+    rm -f "$WAV_FILE"
+    write_state recording
+    overlay_start
+
+    local target=()
+    [ -n "$AUDIO_SOURCE" ] && target=(--target "$AUDIO_SOURCE")
+    # 16 kHz mono s16: exactly what whisper wants, no resampling needed
+    pw-record "${target[@]}" --rate 16000 --channels 1 --format s16 "$WAV_FILE" &
+    echo $! > "$REC_PID_FILE"
+    log "recording started (pid $(cat "$REC_PID_FILE"))"
+
+    # Safety net: never record forever
+    (
+        sleep "$MAX_RECORD_SECONDS"
+        if [ "$(read_state)" = "recording" ]; then "$0" stop; fi
+    ) >/dev/null 2>&1 &
+}
+
+stop_recorder() {
+    if [ -f "$REC_PID_FILE" ]; then
+        local pid; pid=$(cat "$REC_PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -INT "$pid" 2>/dev/null || true
+            # wait for pw-record to flush the wav header
+            for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.02; done
+            kill -9 "$pid" 2>/dev/null || true
+        fi
+        rm -f "$REC_PID_FILE"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Transcription
+# ---------------------------------------------------------------------------
+transcribe() { # -> prints transcribed text
+    local model; model=$(resolve_model)
+    local lang_args=(-l "$LANGUAGE")
+    [ "$TRANSLATE" = "true" ] && lang_args+=(--translate)
+    local prompt_args=()
+    [ -n "$INITIAL_PROMPT" ] && prompt_args=(--prompt "$INITIAL_PROMPT")
+
+    # Fast path: warm daemon with the model already in VRAM
+    if [ "$DAEMON" = "true" ] && curl -sf -m 1 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
+        local extra=()
+        [ "$TRANSLATE" = "true" ] && extra+=(-F translate=true)
+        [ -n "$INITIAL_PROMPT" ] && extra+=(-F "prompt=$INITIAL_PROMPT")
+        curl -sf -m 60 "http://127.0.0.1:$PORT/inference" \
+            -F "file=@$WAV_FILE" \
+            -F temperature=0.0 \
+            -F response_format=text \
+            -F "language=$LANGUAGE" \
+            "${extra[@]}" \
+            2>>"$LOG_FILE" && return 0
+        log "daemon inference failed, falling back to cli"
+    fi
+
+    # Cold path: one-shot CLI
+    local cli; cli=$(find_bin whisper-cli) || die "whisper-cli not found. Run: ./install.sh"
+    "$cli" -m "$model" -f "$WAV_FILE" "${lang_args[@]}" "${prompt_args[@]}" \
+        -t "$THREADS" --no-prints --no-timestamps 2>>"$LOG_FILE"
+}
+
+clean_text() { # strip whisper artifacts: [BLANK_AUDIO], (wind blowing), *music*, whitespace
+    sed -E 's/\[[^][]*\]//g; s/\([^()]*\)//g; s/\*[^*]*\*//g' \
+        | tr '\n' ' ' \
+        | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//; s/[[:space:]]{2,}/ /g'
+}
+
+inject_text() { # inject_text <text>
+    local text="$1"
+    [ "$APPEND_SPACE" = "true" ] && text="$text "
+    case "$INJECT" in
+        type)
+            if command -v wtype >/dev/null; then
+                wtype -- "$text" && return 0
+            fi
+            command -v ydotool >/dev/null && ydotool type -- "$text" && return 0
+            ;&  # fall through to paste on failure
+        paste)
+            local saved=""
+            saved=$(wl-paste 2>/dev/null || true)
+            wl-copy -- "$text"
+            if command -v ydotool >/dev/null; then
+                ydotool key 29:1 47:1 47:0 29:0   # ctrl+v
+                sleep 0.15
+                [ -n "$saved" ] && printf '%s' "$saved" | wl-copy
+                return 0
+            fi
+            ;&
+        clipboard|*)
+            wl-copy -- "$text"
+            notify-send -a OpenHyprWhisper -i edit-paste "OpenHyprWhisper" "Copied to clipboard:\n$text" 2>/dev/null || true
+            ;;
+    esac
+}
+
+cmd_stop() {
+    [ "$(read_state)" != "recording" ] && exit 0
+    stop_recorder
+    write_state transcribing
+
+    if [ ! -s "$WAV_FILE" ]; then
+        write_state idle
+        log "empty recording, nothing to do"
+        exit 0
+    fi
+
+    local t0 t1 text
+    t0=$(date +%s%3N)
+    text=$(transcribe | clean_text)
+    t1=$(date +%s%3N)
+    log "transcribed in $((t1 - t0))ms: $text"
+
+    if [ -z "$text" ]; then
+        write_state empty
+        exit 0
+    fi
+
+    write_state done
+    inject_text "$text"
+}
+
+cmd_cancel() {
+    stop_recorder
+    write_state cancelled
+    rm -f "$WAV_FILE"
+    log "cancelled"
+}
+
+cmd_toggle() {
+    # flock prevents a double-tap from racing start against stop
+    exec 9>"$LOCK_FILE"
+    flock -n 9 || exit 0
+    if [ "$(read_state)" = "recording" ]; then cmd_stop; else cmd_start; fi
+}
+
+# ---------------------------------------------------------------------------
+# Mic level meter (consumed by the overlay for the live waveform)
+# ---------------------------------------------------------------------------
+cmd_meter() {
+    local target=()
+    [ -n "$AUDIO_SOURCE" ] && target=(--target "$AUDIO_SOURCE")
+    pw-record "${target[@]}" --rate 8000 --channels 1 --format s16 - 2>/dev/null \
+        | python3 -u "$OHW_ROOT/scripts/mic-meter.py"
+}
+
+# ---------------------------------------------------------------------------
+# Daemon (whisper-server keeps the model loaded => near-instant transcription)
+# ---------------------------------------------------------------------------
+cmd_daemon() {
+    local action="${1:-status}"
+    local server; server=$(find_bin whisper-server) || die "whisper-server not found. Run: ./install.sh"
+    case "$action" in
+        run)  # foreground, for systemd
+            exec "$server" -m "$(resolve_model)" --host 127.0.0.1 --port "$PORT" -t "$THREADS" -l "$LANGUAGE"
+            ;;
+        start)
+            if curl -sf -m 1 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
+                echo "daemon already running on port $PORT"; return 0
+            fi
+            setsid "$server" -m "$(resolve_model)" --host 127.0.0.1 --port "$PORT" -t "$THREADS" -l "$LANGUAGE" \
+                >>"$LOG_FILE" 2>&1 &
+            echo $! > "$DAEMON_PID_FILE"
+            echo "daemon starting on port $PORT (model loads in a few seconds)"
+            ;;
+        stop)
+            [ -f "$DAEMON_PID_FILE" ] && kill "$(cat "$DAEMON_PID_FILE")" 2>/dev/null || true
+            pkill -f "whisper-server.*--port $PORT" 2>/dev/null || true
+            rm -f "$DAEMON_PID_FILE"
+            echo "daemon stopped"
+            ;;
+        status)
+            if curl -sf -m 1 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
+                echo "daemon: running (port $PORT)"
+            else
+                echo "daemon: not running"
+            fi
+            ;;
+        *) die "unknown daemon action: $action" ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
+# Setup
+# ---------------------------------------------------------------------------
+cmd_setup() {
+    echo "== OpenHyprWhisper setup =="
+    local missing=()
+    for dep in pw-record curl; do command -v "$dep" >/dev/null || missing+=("$dep"); done
+    command -v wtype >/dev/null || command -v ydotool >/dev/null || missing+=("wtype (or ydotool)")
+    [ ${#missing[@]} -gt 0 ] && die "Missing dependencies: ${missing[*]}"
+    find_bin whisper-cli >/dev/null || echo "! whisper-cli not built yet, run ./install.sh"
+
+    local model_file="$MODELS_DIR/ggml-$MODEL.bin"
+    if [ -f "$MODEL" ] || [ -f "$model_file" ]; then
+        echo "model: OK ($([ -f "$MODEL" ] && echo "$MODEL" || echo "$model_file"))"
+    else
+        echo "downloading ggml-$MODEL.bin ..."
+        curl -L -C - --progress-bar \
+            -o "$model_file" \
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$MODEL.bin"
+        echo "model: downloaded"
+    fi
+    echo "All good. Bind 'ohw toggle' to a key and speak."
+}
+
+cmd_status() {
+    echo "state:  $(read_state)"
+    echo "model:  $MODEL"
+    cmd_daemon status
+}
+
+# ---------------------------------------------------------------------------
+case "${1:-toggle}" in
+    toggle)  cmd_toggle ;;
+    start)   cmd_start ;;
+    stop)    cmd_stop ;;
+    cancel)  cmd_cancel ;;
+    meter)   cmd_meter ;;
+    daemon)  shift; cmd_daemon "$@" ;;
+    setup)   cmd_setup ;;
+    status)  cmd_status ;;
+    *)       sed -n '2,14p' "$0"; exit 1 ;;
+esac
