@@ -34,6 +34,7 @@ DAEMON="true"                 # use whisper-server to keep the model warm
 PORT="8595"                   # whisper-server port
 THREADS="$(nproc)"            # CPU threads for whisper
 AUDIO_SOURCE=""               # pipewire target, empty = default mic
+RECORD_ARGS=""                # extra pw-record args (word-split), e.g. "-P stream.capture.sink=true"
 OVERLAY="true"                # show the recording pill overlay
 MAX_RECORD_SECONDS="120"      # hard stop safety limit
 INITIAL_PROMPT=""             # bias vocabulary, e.g. project jargon
@@ -45,6 +46,7 @@ MODEL="${OHW_MODEL:-$MODEL}"
 LANGUAGE="${OHW_LANGUAGE:-$LANGUAGE}"
 INJECT="${OHW_INJECT:-$INJECT}"
 AUDIO_SOURCE="${OHW_AUDIO_SOURCE:-$AUDIO_SOURCE}"
+RECORD_ARGS="${OHW_RECORD_ARGS:-$RECORD_ARGS}"
 OVERLAY="${OHW_OVERLAY:-$OVERLAY}"
 
 STATE_FILE="$RUNTIME_DIR/state.json"
@@ -110,7 +112,8 @@ cmd_start() {
     local target=()
     [ -n "$AUDIO_SOURCE" ] && target=(--target "$AUDIO_SOURCE")
     # 16 kHz mono s16: exactly what whisper wants, no resampling needed
-    pw-record "${target[@]}" --rate 16000 --channels 1 --format s16 "$WAV_FILE" &
+    # shellcheck disable=SC2086 — RECORD_ARGS is intentionally word-split
+    pw-record "${target[@]}" $RECORD_ARGS --rate 16000 --channels 1 --format s16 "$WAV_FILE" &
     echo $! > "$REC_PID_FILE"
     log "recording started (pid $(cat "$REC_PID_FILE"))"
 
