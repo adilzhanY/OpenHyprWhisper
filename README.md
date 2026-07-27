@@ -48,19 +48,29 @@ cd OpenHyprWhisper
 
 The installer builds whisper.cpp with the best backend it finds (CUDA → Vulkan → CPU), downloads the `large-v3-turbo-q5_0` model (~570 MB), links `ohw` into `~/.local/bin`, copies the default config and replacement rules, and installs a systemd user service.
 
-Then add keybinds:
+Then add keybinds. The default setup is **hold the middle mouse button to record** — press it, speak, release it, and the text appears (push-to-talk). `SUPER+Y` works as a secondary keyboard toggle:
 
 ```ini
 # hyprland.conf
+# primary: hold middle mouse button (press = record, release = transcribe & type)
+bind = , mouse:274, exec, ohw start
+bindr = , mouse:274, exec, ohw stop
+# secondary: keyboard toggle
 bind = SUPER, Y, exec, ohw toggle
 bind = SUPER SHIFT, Y, exec, ohw cancel
 ```
 
 ```lua
 -- Hyprland >= 0.55 Lua config
+-- primary: hold middle mouse button
+hl.bind("mouse:274", hl.dsp.exec_cmd("ohw start"), { description = "Dictation: hold to record" })
+hl.bind("mouse:274", hl.dsp.exec_cmd("ohw stop"), { release = true })
+-- secondary: keyboard toggle
 hl.bind("SUPER + Y", hl.dsp.exec_cmd("ohw toggle"), { description = "Dictation: toggle" })
 hl.bind("SUPER + SHIFT + Y", hl.dsp.exec_cmd("ohw cancel"), { description = "Dictation: cancel" })
 ```
+
+> Note: binding the bare middle button consumes normal middle-clicks (primary-selection paste, closing browser tabs, opening links in a new tab). If you use those, bind a side/thumb button instead — `mouse:275` or `mouse:276` — or keep only the `SUPER+Y` toggle.
 
 And keep the model warm (recommended):
 
@@ -72,6 +82,7 @@ systemctl --user enable --now openhyprwhisper
 
 | Command | Action |
 |---|---|
+| `ohw start` / `ohw stop` | hold-to-talk pair: bind to press and release |
 | `ohw toggle` | start recording / stop, transcribe and type |
 | `ohw cancel` | discard the current recording (works mid-transcription too) |
 | `ohw daemon start\|stop\|status` | manage the warm-model daemon |
