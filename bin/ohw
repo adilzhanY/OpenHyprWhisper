@@ -164,7 +164,8 @@ cmd_start() {
     local target=()
     [ -n "$AUDIO_SOURCE" ] && target=(--target "$AUDIO_SOURCE")
     # 16 kHz mono s16: exactly what whisper wants, no resampling needed
-    # shellcheck disable=SC2086 — RECORD_ARGS is intentionally word-split
+    # RECORD_ARGS is intentionally word-split
+    # shellcheck disable=SC2086
     # 9>&- releases the toggle lock fd in children, else it blocks the next toggle
     pw-record "${target[@]}" $RECORD_ARGS --rate 16000 --channels 1 --format s16 "$WAV_FILE" 9>&- &
     local rec_pid=$!
