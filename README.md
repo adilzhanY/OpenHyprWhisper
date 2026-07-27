@@ -10,19 +10,23 @@ Inspired by [OpenSuperWhisper](https://github.com/Starmel/OpenSuperWhisper) for 
 
 - **Works everywhere** — browser, terminal, chat apps: anything with a focused text input (like espanso, but for your voice)
 - **Fast** — whisper.cpp with CUDA/Vulkan; with the warm daemon a sentence transcribes in ~0.2 s
-- **A pretty status pill** — animated recording indicator with live waveform, elapsed time and state transitions, rendered by Quickshell
-- **Theme-aware** — on [end-4/dots-hyprland](https://github.com/end-4/dots-hyprland) the pill follows your Material palette and font live; falls back to a neutral dark look elsewhere
-- **Multilingual** — auto language detection per utterance (great for mixed EN/RU/DE/KK speech)
-- **Optional LLM polish** — fix grammar, punctuation and proper nouns after transcription (`POSTPROCESS="true"`); pluggable backend, defaults to the Claude Code CLI, works with local models too
-- **Replacements** — deterministic corrections for words the model consistently mishears
+- **Multilingual** — auto language detection per utterance, great for mixed EN/RU/DE/KK speech
+- **A pretty status pill** — animated recording indicator with a live waveform, elapsed time and state transitions, rendered by Quickshell at the bottom (or top) of the screen
+- **Theme-aware** — on [end-4/dots-hyprland](https://github.com/end-4/dots-hyprland) the pill follows your Material palette (light and dark) and font live; falls back to a neutral dark look elsewhere
+- **Three correction layers**
+  1. *Vocabulary prompt* — bias transcription toward your jargon (free)
+  2. *Replacements* — deterministic fixes for stubborn mishearings like `cloud code → Claude Code` (~10 ms)
+  3. *LLM polish* — optional grammar, punctuation and proper-noun cleanup (companies, games, famous people) with a pluggable backend (seconds)
+- **Silence gate** — no more hallucinated *"Thank you."* when you stop without speaking
 - **Local & private** — no cloud, no telemetry, no subscription
 
 ## How it works
 
 ```
-keybind → ohw toggle ──► pw-record (16 kHz wav)      ──► overlay pill: "● Recording…"
-keybind → ohw toggle ──► whisper.cpp (CUDA)          ──► overlay pill: "◌ Transcribing…"
-                     ──► wtype into focused window   ──► overlay pill: "✓ Done"
+keybind → ohw toggle ──► pw-record (16 kHz wav)      ──► pill: "● Recording…" + waveform
+keybind → ohw toggle ──► whisper.cpp (CUDA)          ──► pill: "◌ Transcribing…"
+                     ──► replacements + LLM polish   ──► pill: "◌ Polishing…" (optional)
+                     ──► wtype into focused window   ──► pill: "✓ Done"
 ```
 
 A `whisper-server` daemon (optional, on by default) keeps the model in VRAM, so transcription starts instantly instead of reloading ~600 MB per phrase.
@@ -42,7 +46,7 @@ cd OpenHyprWhisper
 ./install.sh
 ```
 
-The installer builds whisper.cpp with the best backend it finds (CUDA → Vulkan → CPU), downloads the `large-v3-turbo-q5_0` model (~570 MB), links `ohw` into `~/.local/bin` and installs a systemd user service.
+The installer builds whisper.cpp with the best backend it finds (CUDA → Vulkan → CPU), downloads the `large-v3-turbo-q5_0` model (~570 MB), links `ohw` into `~/.local/bin`, copies the default config and replacement rules, and installs a systemd user service.
 
 Then add keybinds:
 
@@ -69,29 +73,46 @@ systemctl --user enable --now openhyprwhisper
 | Command | Action |
 |---|---|
 | `ohw toggle` | start recording / stop, transcribe and type |
-| `ohw cancel` | discard the current recording |
+| `ohw cancel` | discard the current recording (works mid-transcription too) |
 | `ohw daemon start\|stop\|status` | manage the warm-model daemon |
 | `ohw setup` | download the model, check dependencies |
 | `ohw status` | show state, model and daemon info |
 
 ## Configuration
 
-`~/.config/openhyprwhisper/config` (see [config.example](config.example)):
-model, language (`auto` by default), inject mode (`type` / `paste` / `clipboard`),
-trailing space, daemon port, audio source, max recording length, vocabulary prompt.
+**`~/.config/openhyprwhisper/config`** — see [config.example](config.example):
 
-`~/.config/openhyprwhisper/replacements` (see [replacements.example](replacements.example)):
-deterministic fixes for words the model consistently mishears, e.g.
-`cloud code = Claude Code`. Case-insensitive, word-boundary matched.
+| Option | Default | Meaning |
+|---|---|---|
+| `MODEL` | `large-v3-turbo-q5_0` | any ggml model name or absolute path |
+| `LANGUAGE` | `auto` | language code, or auto-detect per utterance |
+| `INJECT` | `type` | `type` / `paste` / `clipboard` |
+| `OVERLAY_POSITION` | `bottom` | `bottom` or `top` |
+| `SILENCE_PEAK` | `300` | silence gate threshold, `0` disables |
+| `INITIAL_PROMPT` | empty | vocabulary bias: names, jargon, slang |
+| `POSTPROCESS` | `false` | LLM polish on/off |
+| `POSTPROCESS_CMD` | bundled script | any stdin→stdout command |
+
+Every option can also be overridden per invocation with an `OHW_*` environment variable.
+
+**`~/.config/openhyprwhisper/replacements`** — see [replacements.example](replacements.example): one `misheard = corrected` rule per line, case-insensitive, word-boundary matched.
+
+### LLM polish backends
+
+The bundled default, [scripts/polish-claude.sh](scripts/polish-claude.sh), uses the [Claude Code](https://claude.com/claude-code) CLI — no API key needed if you already use Claude. It adds a few seconds per dictation. For faster polish, point `POSTPROCESS_CMD` at a small local model, for example:
+
+```sh
+POSTPROCESS_CMD="ollama run llama3.2:3b 'Fix grammar and punctuation, output only the corrected text:'"
+```
 
 ## Theming
 
 The overlay reads, live:
 
-- `~/.local/state/quickshell/user/generated/colors.json` — end-4's Material 3 palette (switch wallpaper → the pill recolors)
+- `~/.local/state/quickshell/user/generated/colors.json` — end-4's Material 3 palette; switch wallpaper or light/dark mode and the pill recolors instantly
 - `~/.config/illogical-impulse/config.json` — `appearance.fonts.main`
 
-Without end-4 it uses a dark macOS-like pill. Animation curves are Material 3 expressive, matching end-4's shell.
+The pill respects your bar's reserved space, so it never overlaps it. Animation curves are Material 3 expressive, matching end-4's shell. Without end-4 it uses a dark fallback palette.
 
 ## License
 
