@@ -93,7 +93,7 @@ overlay_start() {
     [ "$OVERLAY" = "true" ] || return 0
     command -v qs >/dev/null || return 0
     pgrep -f "qs -p $OHW_ROOT/quickshell/overlay.qml" >/dev/null && return 0
-    setsid qs -p "$OHW_ROOT/quickshell/overlay.qml" >/dev/null 2>&1 &
+    setsid qs -p "$OHW_ROOT/quickshell/overlay.qml" >/dev/null 2>&1 9>&- &
 }
 
 overlay_kill() {
@@ -113,15 +113,21 @@ cmd_start() {
     [ -n "$AUDIO_SOURCE" ] && target=(--target "$AUDIO_SOURCE")
     # 16 kHz mono s16: exactly what whisper wants, no resampling needed
     # shellcheck disable=SC2086 — RECORD_ARGS is intentionally word-split
-    pw-record "${target[@]}" $RECORD_ARGS --rate 16000 --channels 1 --format s16 "$WAV_FILE" &
+    # 9>&- releases the toggle lock fd in children, else it blocks the next toggle
+    pw-record "${target[@]}" $RECORD_ARGS --rate 16000 --channels 1 --format s16 "$WAV_FILE" 9>&- &
     echo $! > "$REC_PID_FILE"
     log "recording started (pid $(cat "$REC_PID_FILE"))"
 
-    # Safety net: never record forever
+    # Safety net: never record forever. Guarded by session id so a watchdog
+    # from an old recording can never kill a newer one.
+    local session; session=$(date +%s%3N)
+    echo "$session" > "$RUNTIME_DIR/session"
     (
         sleep "$MAX_RECORD_SECONDS"
-        if [ "$(read_state)" = "recording" ]; then "$0" stop; fi
-    ) >/dev/null 2>&1 &
+        if [ "$(read_state)" = "recording" ] && [ "$(cat "$RUNTIME_DIR/session" 2>/dev/null)" = "$session" ]; then
+            "$0" stop
+        fi
+    ) >/dev/null 2>&1 9>&- &
 }
 
 stop_recorder() {
@@ -206,6 +212,7 @@ cmd_stop() {
     [ "$(read_state)" != "recording" ] && exit 0
     stop_recorder
     write_state transcribing
+    exec 9>&-   # release the toggle lock before the slow part
 
     if [ ! -s "$WAV_FILE" ]; then
         write_state idle
@@ -218,6 +225,11 @@ cmd_stop() {
     text=$(transcribe | clean_text)
     t1=$(date +%s%3N)
     log "transcribed in $((t1 - t0))ms: $text"
+
+    # silence often decodes to a lone "." or "…" - treat as empty
+    if printf '%s' "$text" | grep -qE '^[[:punct:][:space:]]*$'; then
+        text=""
+    fi
 
     if [ -z "$text" ]; then
         write_state empty
