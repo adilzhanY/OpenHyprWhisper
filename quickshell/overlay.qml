@@ -8,7 +8,6 @@
 // Falls back to a neutral dark palette when neither file exists.
 import QtQuick
 import QtQuick.Layouts
-import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -33,14 +32,16 @@ ShellRoot {
     // ------------------------------------------------------------------ theme
     property var colors: ({})
     property string fontFamily: "sans-serif"
-    readonly property color surfaceCol: colors.inverse_surface ?? "#1c1c1e"
-    readonly property color textCol: colors.inverse_on_surface ?? "#f2f2f7"
+    // surface/on_surface track the active light/dark scheme; the dark values
+    // are only a fallback for systems without an end-4 palette
+    readonly property color surfaceCol: colors.surface_container_high ?? "#1c1c1e"
+    readonly property color textCol: colors.on_surface ?? "#f2f2f7"
     readonly property bool pillIsDark: (surfaceCol.r * 0.299 + surfaceCol.g * 0.587 + surfaceCol.b * 0.114) < 0.5
     readonly property color errBase: colors.error ?? "#ff453a"
     readonly property color dotCol: pillIsDark
         ? Qt.rgba(Math.min(1, errBase.r * 1.35 + 0.25), errBase.g * 1.1 + 0.12, errBase.b * 1.1 + 0.12, 1)
         : errBase
-    readonly property color accentCol: colors.inverse_primary ?? "#adc6ff"
+    readonly property color accentCol: colors.primary ?? "#adc6ff"
 
     // Material 3 expressive curves (matches end-4's Appearance.qml)
     readonly property list<real> curveEnter: [0.38, 1.21, 0.22, 1.00, 1, 1]  // expressiveDefaultSpatial
@@ -155,19 +156,6 @@ ShellRoot {
             mask: Region {}   // fully click-through
 
             implicitHeight: pill.height + 40
-
-            // cheap analytic shadow, independent of the pill's animating content
-            // (a layer + MultiEffect would re-render every frame forever here)
-            RectangularShadow {
-                anchors.fill: pill
-                radius: pill.radius
-                color: Qt.rgba(0, 0, 0, 0.45)
-                blur: 24
-                offset.y: 4
-                z: -1
-                opacity: pill.opacity
-                scale: pill.scale
-            }
 
             Rectangle {
                 id: pill
