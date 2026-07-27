@@ -100,10 +100,20 @@ overlay_kill() {
     pkill -f "qs -p $OHW_ROOT/quickshell/overlay.qml" 2>/dev/null || true
 }
 
+acquire_lock() {
+    # Serializes start/stop/toggle. flock lives on fd 9; every background
+    # child must be spawned with 9>&- or it would keep the lock forever.
+    exec 9>"$LOCK_FILE"
+    flock -n 9 || exit 0
+}
+
+release_lock() { exec 9>&- 2>/dev/null || true; }
+
 # ---------------------------------------------------------------------------
 # Recording
 # ---------------------------------------------------------------------------
 cmd_start() {
+    acquire_lock
     [ "$(read_state)" = "recording" ] && exit 0
     rm -f "$WAV_FILE"
     write_state recording
@@ -115,8 +125,17 @@ cmd_start() {
     # shellcheck disable=SC2086 — RECORD_ARGS is intentionally word-split
     # 9>&- releases the toggle lock fd in children, else it blocks the next toggle
     pw-record "${target[@]}" $RECORD_ARGS --rate 16000 --channels 1 --format s16 "$WAV_FILE" 9>&- &
-    echo $! > "$REC_PID_FILE"
-    log "recording started (pid $(cat "$REC_PID_FILE"))"
+    local rec_pid=$!
+    echo "$rec_pid" > "$REC_PID_FILE"
+    # catch instant failures (bad AUDIO_SOURCE, pipewire down) instead of
+    # letting the user talk into a dead recorder
+    sleep 0.2
+    if ! kill -0 "$rec_pid" 2>/dev/null; then
+        write_state idle
+        overlay_kill
+        die "recording failed to start (check AUDIO_SOURCE / pipewire)"
+    fi
+    log "recording started (pid $rec_pid)"
 
     # Safety net: never record forever. Guarded by session id so a watchdog
     # from an old recording can never kill a newer one.
@@ -137,7 +156,14 @@ stop_recorder() {
             kill -INT "$pid" 2>/dev/null || true
             # wait for pw-record to flush the wav header
             for _ in $(seq 1 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.02; done
-            kill -9 "$pid" 2>/dev/null || true
+            if kill -0 "$pid" 2>/dev/null; then
+                kill -TERM "$pid" 2>/dev/null || true
+                for _ in $(seq 1 25); do kill -0 "$pid" 2>/dev/null || break; sleep 0.02; done
+                if kill -0 "$pid" 2>/dev/null; then
+                    log "WARNING: recorder needed SIGKILL, wav may be truncated"
+                    kill -9 "$pid" 2>/dev/null || true
+                fi
+            fi
         fi
         rm -f "$REC_PID_FILE"
     fi
@@ -166,6 +192,8 @@ transcribe() { # -> prints transcribed text
             "${extra[@]}" \
             2>>"$LOG_FILE" && return 0
         log "daemon inference failed, falling back to cli"
+    elif [ "$DAEMON" = "true" ]; then
+        log "daemon unreachable, cold start (enable with: systemctl --user enable --now openhyprwhisper)"
     fi
 
     # Cold path: one-shot CLI
@@ -175,7 +203,9 @@ transcribe() { # -> prints transcribed text
 }
 
 clean_text() { # strip whisper artifacts: [BLANK_AUDIO], (wind blowing), *music*, whitespace
-    sed -E 's/\[[^][]*\]//g; s/\([^()]*\)//g; s/\*[^*]*\*//g' \
+    # strip [BLANK_AUDIO]-style tags and *music* markers, but keep normal
+    # parentheses the user actually dictated - only drop all-noise (...) lines
+    sed -E 's/\[[A-Za-z_ ]*\]//g; s/\*[^*]*\*//g; s/^[[:space:]]*\([^()]*\)[[:space:]]*$//' \
         | tr '\n' ' ' \
         | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//; s/[[:space:]]{2,}/ /g'
 }
@@ -188,43 +218,54 @@ inject_text() { # inject_text <text>
             if command -v wtype >/dev/null; then
                 wtype -- "$text" && return 0
             fi
-            command -v ydotool >/dev/null && ydotool type -- "$text" && return 0
+            if command -v ydotool >/dev/null; then
+                ydotool type -- "$text" && return 0
+            fi
             ;&  # fall through to paste on failure
         paste)
             local saved=""
             saved=$(wl-paste 2>/dev/null || true)
-            wl-copy -- "$text"
-            if command -v ydotool >/dev/null; then
-                ydotool key 29:1 47:1 47:0 29:0   # ctrl+v
-                sleep 0.15
-                [ -n "$saved" ] && printf '%s' "$saved" | wl-copy
-                return 0
+            if wl-copy -- "$text" 2>/dev/null && command -v ydotool >/dev/null; then
+                if ydotool key 29:1 47:1 47:0 29:0; then   # ctrl+v
+                    sleep 0.15
+                    [ -n "$saved" ] && printf '%s' "$saved" | wl-copy 2>/dev/null
+                    return 0
+                fi
             fi
             ;&
         clipboard|*)
-            wl-copy -- "$text"
+            wl-copy -- "$text" 2>/dev/null \
+                || { log "ERROR: no way to deliver text: $text"; return 1; }
             notify-send -a OpenHyprWhisper -i edit-paste "OpenHyprWhisper" "Copied to clipboard:\n$text" 2>/dev/null || true
             ;;
     esac
 }
 
 cmd_stop() {
+    acquire_lock
     [ "$(read_state)" != "recording" ] && exit 0
     stop_recorder
     write_state transcribing
-    exec 9>&-   # release the toggle lock before the slow part
+    release_lock   # the slow part below must not block the next toggle
 
-    if [ ! -s "$WAV_FILE" ]; then
-        write_state idle
+    # a wav header alone is 44 bytes - anything at or below that is no audio
+    if [ "$(stat -c%s "$WAV_FILE" 2>/dev/null || echo 0)" -le 44 ]; then
+        write_state empty
         log "empty recording, nothing to do"
         exit 0
     fi
 
     local t0 t1 text
     t0=$(date +%s%3N)
-    text=$(transcribe | clean_text)
+    text=$(transcribe | clean_text) || {
+        write_state empty
+        die "transcription failed (see $LOG_FILE)"
+    }
     t1=$(date +%s%3N)
     log "transcribed in $((t1 - t0))ms: $text"
+
+    # a cancel may have arrived while whisper was working - honor it
+    [ "$(read_state)" != "transcribing" ] && { log "cancelled during transcription"; exit 0; }
 
     # silence often decodes to a lone "." or "…" - treat as empty
     if printf '%s' "$text" | grep -qE '^[[:punct:][:space:]]*$'; then
@@ -248,9 +289,8 @@ cmd_cancel() {
 }
 
 cmd_toggle() {
-    # flock prevents a double-tap from racing start against stop
-    exec 9>"$LOCK_FILE"
-    flock -n 9 || exit 0
+    # cmd_start/cmd_stop each take the lock and re-check state, so a
+    # double-tap can never race start against stop
     if [ "$(read_state)" = "recording" ]; then cmd_stop; else cmd_start; fi
 }
 
@@ -279,9 +319,15 @@ cmd_daemon() {
                 echo "daemon already running on port $PORT"; return 0
             fi
             setsid "$server" -m "$(resolve_model)" --host 127.0.0.1 --port "$PORT" -t "$THREADS" -l "$LANGUAGE" \
-                >>"$LOG_FILE" 2>&1 &
+                >>"$LOG_FILE" 2>&1 9>&- &
             echo $! > "$DAEMON_PID_FILE"
-            echo "daemon starting on port $PORT (model loads in a few seconds)"
+            # wait for the model to load; catches port conflicts and crashes
+            for _ in $(seq 1 40); do
+                curl -sf -m 1 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 && { echo "daemon ready on port $PORT"; return 0; }
+                kill -0 "$(cat "$DAEMON_PID_FILE")" 2>/dev/null || die "daemon died on startup (port in use? see $LOG_FILE)"
+                sleep 0.5
+            done
+            echo "daemon started but not answering yet (large model still loading?)"
             ;;
         stop)
             [ -f "$DAEMON_PID_FILE" ] && kill "$(cat "$DAEMON_PID_FILE")" 2>/dev/null || true
@@ -316,9 +362,12 @@ cmd_setup() {
         echo "model: OK ($([ -f "$MODEL" ] && echo "$MODEL" || echo "$model_file"))"
     else
         echo "downloading ggml-$MODEL.bin ..."
-        curl -L -C - --progress-bar \
-            -o "$model_file" \
-            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$MODEL.bin"
+        # .part + -f: an interrupted download or an HTML error page must never
+        # end up looking like a valid model file
+        curl -fL -C - --progress-bar \
+            -o "$model_file.part" \
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$MODEL.bin" \
+            && mv "$model_file.part" "$model_file"
         echo "model: downloaded"
     fi
     echo "All good. Bind 'ohw toggle' to a key and speak."
@@ -340,5 +389,5 @@ case "${1:-toggle}" in
     daemon)  shift; cmd_daemon "$@" ;;
     setup)   cmd_setup ;;
     status)  cmd_status ;;
-    *)       sed -n '2,14p' "$0"; exit 1 ;;
+    *)       sed -n '2,13p' "$0"; exit 1 ;;
 esac

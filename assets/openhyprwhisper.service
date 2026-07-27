@@ -1,6 +1,5 @@
 [Unit]
 Description=OpenHyprWhisper transcription daemon (whisper-server)
-After=default.target
 
 [Service]
 Type=exec

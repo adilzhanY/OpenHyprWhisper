@@ -11,19 +11,19 @@ echo "== OpenHyprWhisper installer =="
 
 # 1. Dependency check ---------------------------------------------------------
 missing=()
-for dep in git cmake curl pw-record python3; do
+for dep in git cmake curl pw-record python3 wl-copy; do
     command -v "$dep" >/dev/null || missing+=("$dep")
 done
 command -v wtype >/dev/null || command -v ydotool >/dev/null || missing+=("wtype")
 if [ ${#missing[@]} -gt 0 ]; then
     echo "Missing dependencies: ${missing[*]}"
-    echo "On Arch: sudo pacman -S --needed git cmake curl pipewire wtype python"
+    echo "On Arch: sudo pacman -S --needed git cmake curl pipewire wtype wl-clipboard python"
     exit 1
 fi
 command -v qs >/dev/null || echo "note: quickshell not found - the recording overlay will be disabled"
 
 # 2. Build whisper.cpp with the best available backend ------------------------
-if [ ! -x vendor/whisper.cpp/build/bin/whisper-cli ]; then
+if [ ! -x vendor/whisper.cpp/build/bin/whisper-cli ] || [ ! -x vendor/whisper.cpp/build/bin/whisper-server ]; then
     [ -d vendor/whisper.cpp ] || git clone --depth 1 https://github.com/ggml-org/whisper.cpp vendor/whisper.cpp
 
     backend_flags=()
