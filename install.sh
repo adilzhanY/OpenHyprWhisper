@@ -67,6 +67,16 @@ if command -v systemctl >/dev/null; then
     echo "service installed: systemctl --user enable --now openhyprwhisper"
 fi
 
+# Optional local polish daemon (fast on-device LLM cleanup, see README):
+# built only when llama.cpp + a gguf model are present.
+POLISH_MODEL="$HOME/.local/share/openhyprwhisper/models/Qwen2.5-3B-Instruct-Q4_K_M.gguf"
+if [ -x vendor/llama.cpp/build/bin/llama-server ] && [ -f "$POLISH_MODEL" ] && command -v systemctl >/dev/null; then
+    sed -e "s|@OHW_ROOT@|$OHW_ROOT|" -e "s|@MODEL@|$POLISH_MODEL|" assets/openhyprwhisper-polish.service \
+        > "$HOME/.config/systemd/user/openhyprwhisper-polish.service"
+    systemctl --user daemon-reload
+    echo "polish service installed: systemctl --user enable --now openhyprwhisper-polish"
+fi
+
 # 6. Keybind hint -------------------------------------------------------------
 cat <<'EOF'
 

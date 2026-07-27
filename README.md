@@ -16,7 +16,7 @@ Inspired by [OpenSuperWhisper](https://github.com/Starmel/OpenSuperWhisper) for 
 - **Three correction layers**
   1. *Vocabulary prompt* — bias transcription toward your jargon (free)
   2. *Replacements* — deterministic fixes for stubborn mishearings like `cloud code → Claude Code` (~10 ms)
-  3. *LLM polish* — optional cleanup with a pluggable backend and two modes: **full** rewrites grammar and punctuation (emails, documents), **light** only fixes names and brands so the text still sounds like you (chat, terminal, AI prompts)
+  3. *LLM polish* — optional cleanup with a pluggable backend and two modes: **full** rewrites grammar and punctuation (emails, documents), **light** only fixes names and brands so the text still sounds like you (chat, terminal, AI prompts). With the bundled local backend (llama.cpp + Qwen2.5-3B) it adds only ~0.2 s
 - **Silence gate** — no more hallucinated *"Thank you."* when you stop without speaking
 - **Local & private** — no cloud, no telemetry, no subscription
 
@@ -111,19 +111,32 @@ Every option can also be overridden per invocation with an `OHW_*` environment v
 
 ### LLM polish backends
 
-The bundled default, [scripts/polish-claude.sh](scripts/polish-claude.sh), uses the [Claude Code](https://claude.com/claude-code) CLI — no API key needed if you already use Claude. It adds a few seconds per dictation.
+Two backends ship with the tool:
+
+**Local (recommended)** — [scripts/polish-local.py](scripts/polish-local.py) talks to a small LLM (Qwen2.5-3B) served by llama.cpp on your own GPU/CPU. Warm polish takes **~0.2 s**, fully offline, works in any language. Set it up:
+
+```sh
+# build llama.cpp next to whisper.cpp (CUDA/Vulkan auto-detected like the main build)
+cmake -S vendor/llama.cpp -B vendor/llama.cpp/build -DGGML_CUDA=1 -DCMAKE_BUILD_TYPE=Release
+cmake --build vendor/llama.cpp/build -j --target llama-server
+# download the model (~1.9 GB)
+curl -L -o ~/.local/share/openhyprwhisper/models/Qwen2.5-3B-Instruct-Q4_K_M.gguf \
+  https://huggingface.co/bartowski/Qwen2.5-3B-Instruct-GGUF/resolve/main/Qwen2.5-3B-Instruct-Q4_K_M.gguf
+# rerun ./install.sh to install the daemon, then:
+systemctl --user enable --now openhyprwhisper-polish
+```
+
+and in the config: `POSTPROCESS_CMD="<repo>/scripts/polish-local.py"`.
+
+**Claude CLI (zero setup)** — [scripts/polish-claude.sh](scripts/polish-claude.sh), the default, uses the [Claude Code](https://claude.com/claude-code) CLI: no API key or extra downloads if you already use Claude, but each dictation pays ~5-8 s of CLI/cloud overhead.
+
+Any other stdin→stdout command works too (ollama, an API curl, a sed script).
 
 Example of the two modes on the same dictation:
 
 > raw: `so yeah i was asking cloud code about the elden ring api and it dont work good`
-> **light**: `so yeah i was asking Claude Code about the Elden Ring api and it dont work good`
-> **full**: `So yeah, I was asking Claude Code about the Elden Ring API and it doesn't work well.`
-
-For faster polish, point `POSTPROCESS_CMD` at a small local model, for example:
-
-```sh
-POSTPROCESS_CMD="ollama run llama3.2:3b 'Fix grammar and punctuation, output only the corrected text:'"
-```
+> **light**: `so yeah i was asking Claude Code about the elden ring api and it dont work good`
+> **full**: `So yeah, I was asking Claude Code about the Elden Ring API, and it doesn't work well.`
 
 ## Theming
 

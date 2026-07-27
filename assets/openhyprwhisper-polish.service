@@ -1,0 +1,11 @@
+[Unit]
+Description=OpenHyprWhisper polish daemon (llama-server with a small LLM)
+
+[Service]
+Type=exec
+ExecStart=@OHW_ROOT@/vendor/llama.cpp/build/bin/llama-server -m @MODEL@ --host 127.0.0.1 --port 8596 -ngl 99 -c 2048 --no-webui
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
