@@ -40,6 +40,9 @@ OVERLAY_POSITION="bottom"     # top | bottom
 MAX_RECORD_SECONDS="120"      # hard stop safety limit
 SILENCE_PEAK="300"            # skip transcription if peak frame RMS is below this (0 = off)
 INITIAL_PROMPT=""             # bias vocabulary, e.g. project jargon
+POSTPROCESS="false"           # polish grammar/punctuation/names with an LLM (adds seconds)
+POSTPROCESS_CMD=""            # stdin->stdout command; empty = bundled scripts/polish-claude.sh
+POSTPROCESS_TIMEOUT="25"      # seconds before giving up and using the raw transcript
 
 [ -f "$CONFIG_DIR/config" ] && . "$CONFIG_DIR/config"
 
@@ -49,6 +52,8 @@ LANGUAGE="${OHW_LANGUAGE:-$LANGUAGE}"
 INJECT="${OHW_INJECT:-$INJECT}"
 AUDIO_SOURCE="${OHW_AUDIO_SOURCE:-$AUDIO_SOURCE}"
 RECORD_ARGS="${OHW_RECORD_ARGS:-$RECORD_ARGS}"
+POSTPROCESS="${OHW_POSTPROCESS:-$POSTPROCESS}"
+[ -n "$POSTPROCESS_CMD" ] || POSTPROCESS_CMD="$OHW_ROOT/scripts/polish-claude.sh"
 OVERLAY="${OHW_OVERLAY:-$OVERLAY}"
 OVERLAY_POSITION="${OHW_OVERLAY_POSITION:-$OVERLAY_POSITION}"
 
@@ -296,6 +301,20 @@ cmd_stop() {
 
     # a cancel may have arrived while whisper was working - honor it
     [ "$(read_state)" != "transcribing" ] && { log "cancelled during transcription"; exit 0; }
+
+    # optional LLM polish: grammar, punctuation, proper nouns
+    if [ "$POSTPROCESS" = "true" ] && [ -n "$text" ]; then
+        write_state polishing
+        local polished
+        if polished=$(printf '%s' "$text" | timeout "$POSTPROCESS_TIMEOUT" "$POSTPROCESS_CMD" 2>>"$LOG_FILE") \
+            && [ -n "$polished" ]; then
+            log "polished: $polished"
+            text="$polished"
+        else
+            log "postprocess failed or timed out, using raw transcript"
+        fi
+        [ "$(read_state)" != "polishing" ] && { log "cancelled during polish"; exit 0; }
+    fi
 
     # silence often decodes to a lone "." or "…" - treat as empty
     if printf '%s' "$text" | grep -qE '^[[:punct:][:space:]]*$'; then

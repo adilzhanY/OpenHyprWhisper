@@ -13,6 +13,8 @@ Inspired by [OpenSuperWhisper](https://github.com/Starmel/OpenSuperWhisper) for 
 - **A pretty status pill** — animated recording indicator with live waveform, elapsed time and state transitions, rendered by Quickshell
 - **Theme-aware** — on [end-4/dots-hyprland](https://github.com/end-4/dots-hyprland) the pill follows your Material palette and font live; falls back to a neutral dark look elsewhere
 - **Multilingual** — auto language detection per utterance (great for mixed EN/RU/DE/KK speech)
+- **Optional LLM polish** — fix grammar, punctuation and proper nouns after transcription (`POSTPROCESS="true"`); pluggable backend, defaults to the Claude Code CLI, works with local models too
+- **Replacements** — deterministic corrections for words the model consistently mishears
 - **Local & private** — no cloud, no telemetry, no subscription
 
 ## How it works

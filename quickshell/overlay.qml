@@ -17,7 +17,7 @@ ShellRoot {
     id: root
 
     // ------------------------------------------------------------------ state
-    property string ohwState: "recording"   // recording | transcribing | done | empty | cancelled | idle
+    property string ohwState: "recording"   // recording | transcribing | polishing | done | empty | cancelled | idle
     property double startedAt: Date.now()
     property int elapsed: 0
     property var levels: Array(barCount).fill(0)
@@ -237,7 +237,7 @@ ShellRoot {
                         Canvas {
                             id: spinner
                             anchors.fill: parent
-                            visible: root.ohwState === "transcribing"
+                            visible: root.ohwState === "transcribing" || root.ohwState === "polishing"
                             onPaint: {
                                 const ctx = getContext("2d");
                                 ctx.clearRect(0, 0, width, height);
@@ -279,6 +279,7 @@ ShellRoot {
                             switch (root.ohwState) {
                             case "recording":    return "Recording…";
                             case "transcribing": return "Transcribing…";
+                            case "polishing":    return "Polishing…";
                             case "done":         return "Done";
                             case "empty":        return "Nothing heard";
                             default:             return "";
