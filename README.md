@@ -16,7 +16,7 @@ Inspired by [OpenSuperWhisper](https://github.com/Starmel/OpenSuperWhisper) for 
 - **Three correction layers**
   1. *Vocabulary prompt* — bias transcription toward your jargon (free)
   2. *Replacements* — deterministic fixes for stubborn mishearings like `cloud code → Claude Code` (~10 ms)
-  3. *LLM polish* — optional grammar, punctuation and proper-noun cleanup (companies, games, famous people) with a pluggable backend (seconds)
+  3. *LLM polish* — optional cleanup with a pluggable backend and two modes: **full** rewrites grammar and punctuation (emails, documents), **light** only fixes names and brands so the text still sounds like you (chat, terminal, AI prompts)
 - **Silence gate** — no more hallucinated *"Thank you."* when you stop without speaking
 - **Local & private** — no cloud, no telemetry, no subscription
 
@@ -102,6 +102,7 @@ systemctl --user enable --now openhyprwhisper
 | `SILENCE_PEAK` | `300` | silence gate threshold, `0` disables |
 | `INITIAL_PROMPT` | empty | vocabulary bias: names, jargon, slang |
 | `POSTPROCESS` | `false` | LLM polish on/off |
+| `POSTPROCESS_MODE` | `full` | `full` = fix everything; `light` = only fix names, keep your wording |
 | `POSTPROCESS_CMD` | bundled script | any stdin→stdout command |
 
 Every option can also be overridden per invocation with an `OHW_*` environment variable.
@@ -110,7 +111,15 @@ Every option can also be overridden per invocation with an `OHW_*` environment v
 
 ### LLM polish backends
 
-The bundled default, [scripts/polish-claude.sh](scripts/polish-claude.sh), uses the [Claude Code](https://claude.com/claude-code) CLI — no API key needed if you already use Claude. It adds a few seconds per dictation. For faster polish, point `POSTPROCESS_CMD` at a small local model, for example:
+The bundled default, [scripts/polish-claude.sh](scripts/polish-claude.sh), uses the [Claude Code](https://claude.com/claude-code) CLI — no API key needed if you already use Claude. It adds a few seconds per dictation.
+
+Example of the two modes on the same dictation:
+
+> raw: `so yeah i was asking cloud code about the elden ring api and it dont work good`
+> **light**: `so yeah i was asking Claude Code about the Elden Ring api and it dont work good`
+> **full**: `So yeah, I was asking Claude Code about the Elden Ring API and it doesn't work well.`
+
+For faster polish, point `POSTPROCESS_CMD` at a small local model, for example:
 
 ```sh
 POSTPROCESS_CMD="ollama run llama3.2:3b 'Fix grammar and punctuation, output only the corrected text:'"
