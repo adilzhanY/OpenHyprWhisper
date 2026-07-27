@@ -8,6 +8,8 @@
 #   ohw stop        stop recording, transcribe, type into focused window
 #   ohw cancel      stop recording and discard
 #   ohw daemon      manage the whisper-server daemon (start|stop|status|run)
+#   ohw mic         pick the microphone (interactive), or: ohw mic <node-name>
+#   ohw history     show recent transcriptions (default 20): ohw history [n]
 #   ohw meter       print mic RMS levels to stdout (used by the overlay)
 #   ohw setup       download the model and check dependencies
 #   ohw status      print current state
@@ -36,7 +38,8 @@ THREADS="$(nproc)"            # CPU threads for whisper
 AUDIO_SOURCE=""               # pipewire target, empty = default mic
 RECORD_ARGS=""                # extra pw-record args (word-split), e.g. "-P stream.capture.sink=true"
 OVERLAY="true"                # show the recording pill overlay
-OVERLAY_POSITION="bottom"     # top | bottom
+OVERLAY_POSITION="bottom"     # bottom | top | window (attach to the focused window)
+HISTORY="true"                # keep transcriptions in history.tsv (ohw history)
 MAX_RECORD_SECONDS="120"      # hard stop safety limit
 SILENCE_PEAK="300"            # skip transcription if peak frame RMS is below this (0 = off)
 INITIAL_PROMPT=""             # bias vocabulary, e.g. project jargon
@@ -99,11 +102,30 @@ read_state() {
     sed -n 's/.*"state":"\([a-z]*\)".*/\1/p' "$STATE_FILE"
 }
 
+overlay_anchor() {
+    # For OVERLAY_POSITION=window: bottom-center of the focused window in
+    # monitor-local logical coordinates -> "monitorName centerX bottomY".
+    # Prints nothing when there is no focused window (overlay falls back).
+    command -v hyprctl >/dev/null || return 0
+    { hyprctl -j activewindow; echo '===' ; hyprctl -j monitors; } 2>/dev/null | python3 -c '
+import json, sys
+raw = sys.stdin.read().split("===")
+try:
+    win = json.loads(raw[0]); mons = json.loads(raw[1])
+    x, y = win["at"]; w, h = win["size"]
+    mon = next(m for m in mons if m["id"] == win["monitor"])
+    print(mon["name"], int(x + w / 2 - mon["x"]), int(y + h - mon["y"]))
+except Exception:
+    pass' 2>/dev/null
+}
+
 overlay_start() {
     [ "$OVERLAY" = "true" ] || return 0
     command -v qs >/dev/null || return 0
     pgrep -f "qs -p $OHW_ROOT/quickshell/overlay.qml" >/dev/null && return 0
-    OHW_BIN="$OHW_ROOT/bin/ohw" OHW_OVERLAY_POSITION="$OVERLAY_POSITION" \
+    local anchor=""
+    [ "$OVERLAY_POSITION" = "window" ] && anchor=$(overlay_anchor)
+    OHW_BIN="$OHW_ROOT/bin/ohw" OHW_OVERLAY_POSITION="$OVERLAY_POSITION" OHW_ANCHOR="$anchor" \
         setsid qs -p "$OHW_ROOT/quickshell/overlay.qml" >/dev/null 2>&1 9>&- &
 }
 
@@ -329,7 +351,16 @@ cmd_stop() {
     fi
 
     write_state done
+    if [ "$HISTORY" = "true" ]; then
+        printf '%s\t%s\n' "$(date -Iseconds)" "$text" >> "$DATA_DIR/history.tsv"
+    fi
     inject_text "$text"
+}
+
+cmd_history() {
+    local n="${1:-20}" f="$DATA_DIR/history.tsv"
+    [ -f "$f" ] || { echo "no history yet"; return 0; }
+    tail -n "$n" "$f" | awk -F'\t' '{ printf "\033[2m%s\033[0m  %s\n", substr($1, 1, 19), $2 }'
 }
 
 cmd_cancel() {
@@ -398,6 +429,54 @@ cmd_daemon() {
 }
 
 # ---------------------------------------------------------------------------
+# Microphone selection
+# ---------------------------------------------------------------------------
+set_audio_source() { # persist AUDIO_SOURCE in the config file
+    local value="$1" cfg="$CONFIG_DIR/config"
+    touch "$cfg"
+    if grep -qE '^#?AUDIO_SOURCE=' "$cfg"; then
+        sed -i "s|^#\?AUDIO_SOURCE=.*|AUDIO_SOURCE=\"$value\"|" "$cfg"
+    else
+        printf 'AUDIO_SOURCE="%s"\n' "$value" >> "$cfg"
+    fi
+    echo "AUDIO_SOURCE set to: ${value:-<default mic>}"
+}
+
+cmd_mic() {
+    if [ $# -gt 0 ]; then set_audio_source "$1"; return; fi
+
+    local default_src; default_src=$(pactl get-default-source 2>/dev/null || true)
+    # name<TAB>description for every real input (monitors excluded)
+    local list
+    list=$(pactl -f json list sources 2>/dev/null | python3 -c '
+import json, sys
+for s in json.load(sys.stdin):
+    if not s["name"].endswith(".monitor"):
+        print(s["name"] + "\t" + s["description"])')
+    [ -n "$list" ] || die "no microphones found"
+
+    echo "Available microphones (current: ${AUDIO_SOURCE:-default = $default_src}):"
+    local i=0 names=()
+    while IFS=$'\t' read -r name desc; do
+        i=$((i + 1)); names+=("$name")
+        local mark=" "
+        [ "$name" = "${AUDIO_SOURCE:-$default_src}" ] && mark="*"
+        printf ' %s %2d) %s\n      %s\n' "$mark" "$i" "$desc" "$name"
+    done <<< "$list"
+
+    [ -t 0 ] || return 0   # non-interactive: just list
+    printf 'Select 1-%d, or 0 for the system default mic: ' "$i"
+    local choice; read -r choice
+    case "$choice" in
+        0) set_audio_source "" ;;
+        ''|*[!0-9]*) echo "unchanged" ;;
+        *) [ "$choice" -ge 1 ] && [ "$choice" -le "$i" ] \
+               && set_audio_source "${names[$((choice - 1))]}" \
+               || echo "unchanged" ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
 # Setup
 # ---------------------------------------------------------------------------
 cmd_setup() {
@@ -438,7 +517,9 @@ case "${1:-toggle}" in
     cancel)  cmd_cancel ;;
     meter)   cmd_meter ;;
     daemon)  shift; cmd_daemon "$@" ;;
+    mic)     shift; cmd_mic "$@" ;;
+    history) shift; cmd_history "$@" ;;
     setup)   cmd_setup ;;
     status)  cmd_status ;;
-    *)       sed -n '2,13p' "$0"; exit 1 ;;
+    *)       sed -n '2,15p' "$0"; exit 1 ;;
 esac

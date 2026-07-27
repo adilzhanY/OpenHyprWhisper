@@ -33,8 +33,15 @@
 # Show the recording pill overlay (needs quickshell)
 #OVERLAY="true"
 
-# Where the pill appears: "bottom" or "top"
+# Where the pill appears:
+#   bottom / top - fixed at the screen edge (respects your bar)
+#   window       - attached to the focused window's bottom edge, so it follows
+#                  where you're dictating (inspired by OpenSuperWhisper's
+#                  caret-anchored card)
 #OVERLAY_POSITION="bottom"
+
+# Keep a history of transcriptions (view with: ohw history [n])
+#HISTORY="true"
 
 # Safety limit: auto-stop after this many seconds of recording
 #MAX_RECORD_SECONDS="120"

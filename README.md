@@ -11,7 +11,8 @@ Inspired by [OpenSuperWhisper](https://github.com/Starmel/OpenSuperWhisper) for 
 - **Works everywhere** — browser, terminal, chat apps: anything with a focused text input (like espanso, but for your voice)
 - **Fast** — whisper.cpp with CUDA/Vulkan; with the warm daemon a sentence transcribes in ~0.2 s
 - **Multilingual** — auto language detection per utterance, great for mixed EN/RU/DE/KK speech
-- **A pretty status pill** — animated recording indicator with a live waveform, elapsed time and state transitions, rendered by Quickshell at the bottom (or top) of the screen
+- **A pretty status pill** — animated recording indicator with a live waveform, elapsed time and state transitions, rendered by Quickshell; pin it to a screen edge or let it attach to the focused window so it appears where you're dictating
+- **Mic picker & history** — `ohw mic` selects the input device, `ohw history` recovers past transcriptions
 - **Theme-aware** — on [end-4/dots-hyprland](https://github.com/end-4/dots-hyprland) the pill follows your Material palette (light and dark) and font live; falls back to a neutral dark look elsewhere
 - **Three correction layers**
   1. *Vocabulary prompt* — bias transcription toward your jargon (free)
@@ -86,6 +87,8 @@ systemctl --user enable --now openhyprwhisper
 | `ohw toggle` | start recording / stop, transcribe and type |
 | `ohw cancel` | discard the current recording (works mid-transcription too) |
 | `ohw daemon start\|stop\|status` | manage the warm-model daemon |
+| `ohw mic` | pick a microphone interactively (or `ohw mic <node-name>`) |
+| `ohw history [n]` | show the last n transcriptions (default 20) |
 | `ohw setup` | download the model, check dependencies |
 | `ohw status` | show state, model and daemon info |
 
@@ -98,7 +101,8 @@ systemctl --user enable --now openhyprwhisper
 | `MODEL` | `large-v3-turbo-q5_0` | any ggml model name or absolute path |
 | `LANGUAGE` | `auto` | language code, or auto-detect per utterance |
 | `INJECT` | `type` | `type` / `paste` / `clipboard` |
-| `OVERLAY_POSITION` | `bottom` | `bottom` or `top` |
+| `OVERLAY_POSITION` | `bottom` | `bottom` / `top` (screen edge) or `window` (pill attaches to the focused window, OpenSuperWhisper-style) |
+| `HISTORY` | `true` | keep transcriptions for `ohw history` |
 | `SILENCE_PEAK` | `300` | silence gate threshold, `0` disables |
 | `INITIAL_PROMPT` | empty | vocabulary bias: names, jargon, slang |
 | `POSTPROCESS` | `false` | LLM polish on/off |

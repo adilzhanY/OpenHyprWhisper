@@ -27,7 +27,17 @@ ShellRoot {
     Component.onCompleted: shown = true   // flips after Behaviors are active -> slide-in animates
 
     readonly property bool hasSymbols: Qt.fontFamilies().includes("Material Symbols Rounded")
-    readonly property bool atTop: (Quickshell.env("OHW_OVERLAY_POSITION") || "bottom") === "top"
+    readonly property string position: Quickshell.env("OHW_OVERLAY_POSITION") || "bottom"
+    readonly property bool atTop: position === "top"
+
+    // "window" mode: attach the pill to the focused window (OpenSuperWhisper's
+    // caret-anchoring, approximated with hyprctl window geometry on Wayland).
+    // OHW_ANCHOR = "monitorName centerX bottomY" in monitor-local logical px.
+    readonly property var anchorParts: (Quickshell.env("OHW_ANCHOR") || "").split(" ")
+    readonly property bool windowMode: position === "window" && anchorParts.length === 3
+    readonly property string anchorMon: windowMode ? anchorParts[0] : ""
+    readonly property real anchorCx: windowMode ? parseInt(anchorParts[1]) : 0
+    readonly property real anchorBy: windowMode ? parseInt(anchorParts[2]) : 0
 
     // ------------------------------------------------------------------ theme
     property var colors: ({})
@@ -139,19 +149,27 @@ ShellRoot {
             id: win
             required property var modelData
             screen: modelData
-            visible: Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name === modelData.name
-                                             : modelData === Quickshell.screens[0]
+            visible: root.windowMode ? modelData.name === root.anchorMon
+                     : Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name === modelData.name
+                                               : modelData === Quickshell.screens[0]
 
             WlrLayershell.namespace: "openhyprwhisper"
             WlrLayershell.layer: WlrLayer.Overlay
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
             // reserve no space ourselves, but respect the bar's exclusive
-            // zone so the pill lands above/below it instead of overlapping
-            exclusionMode: ExclusionMode.Normal
+            // zone so the pill lands above/below it instead of overlapping.
+            // window mode positions in absolute monitor coordinates instead,
+            // so there it must span the full screen and ignore zones.
+            exclusionMode: root.windowMode ? ExclusionMode.Ignore : ExclusionMode.Normal
             exclusiveZone: 0
-            anchors { top: root.atTop; bottom: !root.atTop; left: true; right: true }
-            margins.top: 12
-            margins.bottom: 12
+            anchors {
+                top: root.windowMode || root.atTop
+                bottom: root.windowMode || !root.atTop
+                left: true
+                right: true
+            }
+            margins.top: root.windowMode ? 0 : 12
+            margins.bottom: root.windowMode ? 0 : 12
             color: "transparent"
             mask: Region {}   // fully click-through
 
@@ -159,19 +177,30 @@ ShellRoot {
 
             Rectangle {
                 id: pill
-                anchors.horizontalCenter: parent.horizontalCenter
-                // slides in from (and out through) the nearest screen edge
-                y: root.atTop
-                    ? ((root.exiting || !root.shown) ? -height - 24 : 8)
-                    : ((root.exiting || !root.shown) ? parent.height + 24 : parent.height - height - 8)
+                x: root.windowMode
+                    ? Math.max(8, Math.min(root.anchorCx - width / 2, parent.width - width - 8))
+                    : (parent.width - width) / 2
+                // window mode: rises out of the focused window's bottom edge
+                // (like OpenSuperWhisper's caret card); otherwise slides in
+                // from the nearest screen edge
+                y: {
+                    const hidden = root.exiting || !root.shown;
+                    if (root.windowMode) {
+                        const rest = Math.max(8, Math.min(root.anchorBy - height - 16, parent.height - height - 8));
+                        return hidden ? rest + 28 : rest;
+                    }
+                    return root.atTop
+                        ? (hidden ? -height - 24 : 8)
+                        : (hidden ? parent.height + 24 : parent.height - height - 8);
+                }
+                opacity: (root.exiting || (root.windowMode && !root.shown)) ? 0 : 1
                 width: content.implicitWidth + 40
                 height: 42
                 radius: height / 2
                 color: root.surfaceCol
                 border.width: 1
                 border.color: Qt.rgba(root.textCol.r, root.textCol.g, root.textCol.b, 0.08)
-                opacity: root.exiting ? 0 : 1
-                scale: root.exiting ? 0.92 : 1
+                scale: (root.exiting || !root.shown) ? (root.windowMode ? 0.6 : 0.92) : 1
 
                 Behavior on y {
                     NumberAnimation {
@@ -185,7 +214,11 @@ ShellRoot {
                 }
                 Behavior on opacity { NumberAnimation { duration: 220 } }
                 Behavior on scale {
-                    NumberAnimation { duration: 240; easing.type: Easing.BezierSpline; easing.bezierCurve: root.curveExit }
+                    NumberAnimation {
+                        duration: root.exiting ? 240 : 500
+                        easing.type: Easing.BezierSpline
+                        easing.bezierCurve: root.exiting ? root.curveExit : root.curveEnter
+                    }
                 }
 
                 RowLayout {
