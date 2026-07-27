@@ -151,6 +151,17 @@ The overlay reads, live:
 
 The pill respects your bar's reserved space, so it never overlaps it. Animation curves are Material 3 expressive, matching end-4's shell. Without end-4 it uses a dark fallback palette.
 
+## Testing
+
+```sh
+tests/run-tests.sh            # everything
+tests/run-tests.sh unit       # text/audio processing only (runs anywhere, incl. CI)
+tests/run-tests.sh integration # real pipeline: fake mic -> whisper -> clipboard
+tests/run-tests.sh ui         # overlay states/positions on a live Hyprland session
+```
+
+The suite runs against an isolated config/state (your real setup is untouched), synthesizes its own audio through a PipeWire null sink, and skips - never fails - tests whose hardware isn't present.
+
 ## License
 
 MIT

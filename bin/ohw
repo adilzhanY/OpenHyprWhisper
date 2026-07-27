@@ -16,7 +16,7 @@
 set -euo pipefail
 
 OHW_ROOT="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.." && pwd)"
-RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}/openhyprwhisper"
+RUNTIME_DIR="${OHW_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}/openhyprwhisper}"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/openhyprwhisper"
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/openhyprwhisper"
 MODELS_DIR="$DATA_DIR/models"
@@ -61,6 +61,8 @@ POSTPROCESS_MODE="${OHW_POSTPROCESS_MODE:-$POSTPROCESS_MODE}"
 [ -n "$POSTPROCESS_CMD" ] || POSTPROCESS_CMD="$OHW_ROOT/scripts/polish-claude.sh"
 OVERLAY="${OHW_OVERLAY:-$OVERLAY}"
 OVERLAY_POSITION="${OHW_OVERLAY_POSITION:-$OVERLAY_POSITION}"
+MAX_RECORD_SECONDS="${OHW_MAX_RECORD_SECONDS:-$MAX_RECORD_SECONDS}"
+HISTORY="${OHW_HISTORY:-$HISTORY}"
 
 STATE_FILE="$RUNTIME_DIR/state.json"
 WAV_FILE="$RUNTIME_DIR/audio.wav"
@@ -125,7 +127,14 @@ overlay_start() {
     pgrep -f "qs -p $OHW_ROOT/quickshell/overlay.qml" >/dev/null && return 0
     local anchor=""
     [ "$OVERLAY_POSITION" = "window" ] && anchor=$(overlay_anchor)
+    # pass only theme files that exist, so the overlay never logs failed reads
+    # on machines without end-4/illogical-impulse
+    local colors_json="$HOME/.local/state/quickshell/user/generated/colors.json"
+    local ii_config="$HOME/.config/illogical-impulse/config.json"
+    [ -f "$colors_json" ] || colors_json=""
+    [ -f "$ii_config" ] || ii_config=""
     OHW_BIN="$OHW_ROOT/bin/ohw" OHW_OVERLAY_POSITION="$OVERLAY_POSITION" OHW_ANCHOR="$anchor" \
+        OHW_THEME_COLORS="$colors_json" OHW_THEME_CONFIG="$ii_config" \
         setsid qs -p "$OHW_ROOT/quickshell/overlay.qml" >/dev/null 2>&1 9>&- &
 }
 
@@ -276,7 +285,11 @@ inject_text() { # inject_text <text>
             if wl-copy -- "$text" 2>/dev/null && command -v ydotool >/dev/null; then
                 if ydotool key 29:1 47:1 47:0 29:0; then   # ctrl+v
                     sleep 0.15
-                    [ -n "$saved" ] && printf '%s' "$saved" | wl-copy 2>/dev/null
+                    # restore only if the clipboard still holds our text - the
+                    # user may have copied something new in the meantime
+                    if [ -n "$saved" ] && [ "$(wl-paste 2>/dev/null || true)" = "$text" ]; then
+                        printf '%s' "$saved" | wl-copy 2>/dev/null
+                    fi
                     return 0
                 fi
             fi
@@ -510,6 +523,10 @@ cmd_status() {
 }
 
 # ---------------------------------------------------------------------------
+# Test hook: `OHW_LIB_ONLY=1 source bin/ohw` loads the functions without
+# dispatching a command (used by tests/run-tests.sh).
+[ -n "${OHW_LIB_ONLY:-}" ] && return 0
+
 case "${1:-toggle}" in
     toggle)  cmd_toggle ;;
     start)   cmd_start ;;

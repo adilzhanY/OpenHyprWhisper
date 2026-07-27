@@ -58,7 +58,7 @@ ShellRoot {
     readonly property list<real> curveExit: [0.3, 0, 0.8, 0.15, 1, 1]        // emphasizedAccel
     readonly property list<real> curveStd: [0.2, 0, 0, 1, 1, 1]              // standard
 
-    readonly property string stateDir: Quickshell.env("XDG_RUNTIME_DIR") + "/openhyprwhisper"
+    readonly property string stateDir: Quickshell.env("OHW_RUNTIME_DIR") || (Quickshell.env("XDG_RUNTIME_DIR") + "/openhyprwhisper")
 
     // ------------------------------------------------------------- file watch
     FileView {
@@ -76,9 +76,24 @@ ShellRoot {
         }
     }
 
+    // Theme files are passed in by ohw only when they exist (env unset or
+    // empty = no end-4 on this machine, use the fallback palette silently).
+    // When launched directly (tests, qs -p by hand) fall back to the default
+    // end-4 locations if the files are there.
+    readonly property string themeColorsPath: {
+        const env = Quickshell.env("OHW_THEME_COLORS");
+        if (env === "") return "";   // set-but-empty: ohw says the file doesn't exist
+        return env || (Quickshell.env("HOME") + "/.local/state/quickshell/user/generated/colors.json");
+    }
+    readonly property string themeConfigPath: {
+        const env = Quickshell.env("OHW_THEME_CONFIG");
+        if (env === "") return "";
+        return env || (Quickshell.env("HOME") + "/.config/illogical-impulse/config.json");
+    }
+
     FileView {
         id: colorsFile
-        path: Quickshell.env("HOME") + "/.local/state/quickshell/user/generated/colors.json"
+        path: root.themeColorsPath
         watchChanges: true
         onFileChanged: reload()
         onLoaded: {
@@ -88,7 +103,7 @@ ShellRoot {
 
     FileView {
         id: iiConfigFile
-        path: Quickshell.env("HOME") + "/.config/illogical-impulse/config.json"
+        path: root.themeConfigPath
         watchChanges: true
         onFileChanged: reload()
         onLoaded: {
