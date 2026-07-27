@@ -38,3 +38,8 @@
 
 # Bias transcription toward your vocabulary (names, jargon)
 #INITIAL_PROMPT=""
+
+# Silence gate: if the loudest 100ms of the recording is below this RMS,
+# skip transcription entirely (prevents "Thank you." hallucinations).
+# Raise it if silence still gets through, lower it if quiet speech is dropped, 0 disables.
+#SILENCE_PEAK="300"

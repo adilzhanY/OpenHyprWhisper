@@ -37,6 +37,7 @@ AUDIO_SOURCE=""               # pipewire target, empty = default mic
 RECORD_ARGS=""                # extra pw-record args (word-split), e.g. "-P stream.capture.sink=true"
 OVERLAY="true"                # show the recording pill overlay
 MAX_RECORD_SECONDS="120"      # hard stop safety limit
+SILENCE_PEAK="300"            # skip transcription if peak frame RMS is below this (0 = off)
 INITIAL_PROMPT=""             # bias vocabulary, e.g. project jargon
 
 [ -f "$CONFIG_DIR/config" ] && . "$CONFIG_DIR/config"
@@ -253,6 +254,17 @@ cmd_stop() {
         write_state empty
         log "empty recording, nothing to do"
         exit 0
+    fi
+
+    # silence gate: whisper hallucinates on silent audio ("Thank you.")
+    if [ "$SILENCE_PEAK" -gt 0 ] 2>/dev/null; then
+        local peak
+        peak=$(python3 "$OHW_ROOT/scripts/wav-peak.py" "$WAV_FILE" 2>>"$LOG_FILE" || echo -1)
+        if [ "$peak" -ge 0 ] && [ "$peak" -lt "$SILENCE_PEAK" ]; then
+            write_state empty
+            log "silence (peak rms $peak < $SILENCE_PEAK), skipping transcription"
+            exit 0
+        fi
     fi
 
     local t0 t1 text
