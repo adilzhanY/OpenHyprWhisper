@@ -1,0 +1,40 @@
+# OpenHyprWhisper configuration
+# Copy to ~/.config/openhyprwhisper/config and edit.
+# This file is sourced by bash - keep it simple: KEY="value"
+
+# Model: name of ggml-<name>.bin in ~/.local/share/openhyprwhisper/models,
+# or an absolute path to a .bin file.
+# Good options: large-v3-turbo-q5_0 (default, best), small, base.en (fastest)
+#MODEL="large-v3-turbo-q5_0"
+
+# Language code ("en", "ru", "de", "kk", ...) or "auto" to detect per utterance.
+#LANGUAGE="auto"
+
+# Translate speech to English instead of transcribing it.
+#TRANSLATE="false"
+
+# How to put text into the focused window:
+#   type      - wtype/ydotool types it (works in most apps)
+#   paste     - copy + Ctrl+V + restore clipboard (for apps that dislike wtype)
+#   clipboard - just copy, you paste manually
+#INJECT="type"
+
+# Append a space after the transcribed text (nice for dictating in bursts).
+#APPEND_SPACE="true"
+
+# Keep whisper-server running with the model warm (near-instant results).
+# Start it with: systemctl --user enable --now openhyprwhisper
+#DAEMON="true"
+#PORT="8595"
+
+# Pipewire source node, empty = default microphone (see: wpctl status)
+#AUDIO_SOURCE=""
+
+# Show the recording pill overlay (needs quickshell)
+#OVERLAY="true"
+
+# Safety limit: auto-stop after this many seconds of recording
+#MAX_RECORD_SECONDS="120"
+
+# Bias transcription toward your vocabulary (names, jargon)
+#INITIAL_PROMPT=""

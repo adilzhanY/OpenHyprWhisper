@@ -1,0 +1,12 @@
+[Unit]
+Description=OpenHyprWhisper transcription daemon (whisper-server)
+After=default.target
+
+[Service]
+Type=exec
+ExecStart=@OHW_ROOT@/bin/ohw daemon run
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

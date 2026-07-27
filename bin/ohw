@@ -40,6 +40,13 @@ INITIAL_PROMPT=""             # bias vocabulary, e.g. project jargon
 
 [ -f "$CONFIG_DIR/config" ] && . "$CONFIG_DIR/config"
 
+# Environment overrides (OHW_*) win over the config file - handy for scripting
+MODEL="${OHW_MODEL:-$MODEL}"
+LANGUAGE="${OHW_LANGUAGE:-$LANGUAGE}"
+INJECT="${OHW_INJECT:-$INJECT}"
+AUDIO_SOURCE="${OHW_AUDIO_SOURCE:-$AUDIO_SOURCE}"
+OVERLAY="${OHW_OVERLAY:-$OVERLAY}"
+
 STATE_FILE="$RUNTIME_DIR/state.json"
 WAV_FILE="$RUNTIME_DIR/audio.wav"
 REC_PID_FILE="$RUNTIME_DIR/recorder.pid"
