@@ -174,6 +174,23 @@ run_unit() {
     assert_contains "usage lists every command" "history" "$usage"
     assert_contains "usage mentions mic picker" "ohw mic" "$usage"
 
+    # --- on/off switch
+    # A private port keeps `disable`'s pkill away from the real daemons, and the
+    # isolated XDG_CONFIG_HOME means no systemd unit is ever found to stop.
+    mkdir -p "$CONFIG_DIR"
+    printf 'PORT="18595"\nPOLISH_PORT="18596"\n' > "$CONFIG_DIR/config"
+    assert_eq "switch defaults to on" "on" "$("$OHW" enabled)"
+    "$OHW" disable >/dev/null
+    assert_eq "disable reports off" "off" "$("$OHW" enabled || true)"
+    "$OHW" enabled >/dev/null 2>&1 && fail "disable exits nonzero" || pass "disable exits nonzero"
+    assert_contains "status shows the switch" "switch: off" "$("$OHW" status 2>&1)"
+    write_state idle
+    "$OHW" start >/dev/null 2>&1
+    assert_eq "start is a no-op while off" "idle" "$(read_state)"
+    "$OHW" enable >/dev/null
+    assert_eq "enable reports on" "on" "$("$OHW" enabled)"
+    rm -f "$CONFIG_DIR/config"
+
     # --- service templating
     sed -e "s|@OHW_ROOT@|/some/where|" "$OHW_ROOT/assets/openhyprwhisper.service" > "$TESTTMP/svc"
     assert_contains "service ExecStart is templated" "/some/where/bin/ohw daemon run" "$(cat "$TESTTMP/svc")"

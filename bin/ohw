@@ -7,6 +7,10 @@
 #   ohw start       start recording
 #   ohw stop        stop recording, transcribe, type into focused window
 #   ohw cancel      stop recording and discard
+#   ohw enable      turn dictation on: start the whisper/polish daemons
+#   ohw disable     turn dictation off: stop every daemon, free the VRAM
+#   ohw switch      flip between enable and disable (bind this to a UI toggle)
+#   ohw enabled     print on|off; exit 0 when on, 1 when off
 #   ohw daemon      manage the whisper-server daemon (start|stop|status|run)
 #   ohw mic         pick the microphone (interactive), or: ohw mic <node-name>
 #   ohw history     show recent transcriptions (default 20): ohw history [n]
@@ -34,6 +38,7 @@ INJECT="type"                 # type | paste | clipboard
 APPEND_SPACE="true"           # append a space after the typed text
 DAEMON="true"                 # use whisper-server to keep the model warm
 PORT="8595"                   # whisper-server port
+POLISH_PORT="8596"            # llama-server port for the local polish backend
 THREADS="$(nproc)"            # CPU threads for whisper
 AUDIO_SOURCE=""               # pipewire target, empty = default mic
 RECORD_ARGS=""                # extra pw-record args (word-split), e.g. "-P stream.capture.sink=true"
@@ -64,6 +69,7 @@ OVERLAY_POSITION="${OHW_OVERLAY_POSITION:-$OVERLAY_POSITION}"
 MAX_RECORD_SECONDS="${OHW_MAX_RECORD_SECONDS:-$MAX_RECORD_SECONDS}"
 HISTORY="${OHW_HISTORY:-$HISTORY}"
 
+DISABLED_FILE="$CONFIG_DIR/disabled"   # present = dictation is switched off
 STATE_FILE="$RUNTIME_DIR/state.json"
 WAV_FILE="$RUNTIME_DIR/audio.wav"
 REC_PID_FILE="$RUNTIME_DIR/recorder.pid"
@@ -155,6 +161,13 @@ release_lock() { exec 9>&- 2>/dev/null || true; }
 # Recording
 # ---------------------------------------------------------------------------
 cmd_start() {
+    if is_disabled; then
+        # The keybind still fires when dictation is off - say why nothing happens
+        notify-send -a OpenHyprWhisper -i microphone-sensitivity-muted \
+            "Voice dictation is off" "Turn it back on with: ohw enable" 2>/dev/null || true
+        log "start ignored: disabled"
+        exit 0
+    fi
     acquire_lock
     [ "$(read_state)" = "recording" ] && exit 0
     rm -f "$WAV_FILE"
@@ -443,6 +456,62 @@ cmd_daemon() {
 }
 
 # ---------------------------------------------------------------------------
+# On/off switch: with dictation disabled nothing of ours stays resident -
+# no whisper-server, no llama-server, no overlay, no VRAM.
+# ---------------------------------------------------------------------------
+OHW_UNITS=(openhyprwhisper.service openhyprwhisper-polish.service)
+
+is_disabled() { [ -f "$DISABLED_FILE" ]; }
+
+unit_installed() { # unit_installed <name>
+    [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/$1" ]
+}
+
+cmd_enable() {
+    rm -f "$DISABLED_FILE"
+    if command -v systemctl >/dev/null; then
+        for unit in "${OHW_UNITS[@]}"; do
+            unit_installed "$unit" || continue
+            # --now so it comes up immediately, enable so it survives a reboot
+            systemctl --user enable --now "$unit" >/dev/null 2>&1 || true
+        done
+    fi
+    log "enabled"
+    echo "OpenHyprWhisper: on"
+}
+
+cmd_disable() {
+    # A recording in flight would otherwise keep pw-record and the overlay alive
+    [ "$(read_state)" = "recording" ] && cmd_cancel
+    overlay_kill
+    write_state idle
+
+    if command -v systemctl >/dev/null; then
+        for unit in "${OHW_UNITS[@]}"; do
+            unit_installed "$unit" || continue
+            systemctl --user disable --now "$unit" >/dev/null 2>&1 || true
+        done
+    fi
+    # Daemons started by hand (`ohw daemon start`) are not systemd's business
+    pkill -f "whisper-server.*--port $PORT" 2>/dev/null || true
+    pkill -f "llama-server.*--port $POLISH_PORT" 2>/dev/null || true
+    rm -f "$DAEMON_PID_FILE"
+
+    touch "$DISABLED_FILE"
+    log "disabled"
+    echo "OpenHyprWhisper: off"
+}
+
+cmd_switch() {
+    if is_disabled; then cmd_enable; else cmd_disable; fi
+}
+
+cmd_enabled() {
+    if is_disabled; then echo off; return 1; fi
+    echo on
+}
+
+# ---------------------------------------------------------------------------
 # Microphone selection
 # ---------------------------------------------------------------------------
 set_audio_source() { # persist AUDIO_SOURCE in the config file
@@ -518,6 +587,7 @@ cmd_setup() {
 }
 
 cmd_status() {
+    echo "switch: $(is_disabled && echo off || echo on)"
     echo "state:  $(read_state)"
     echo "model:  $MODEL"
     cmd_daemon status
@@ -533,11 +603,16 @@ case "${1:-toggle}" in
     start)   cmd_start ;;
     stop)    cmd_stop ;;
     cancel)  cmd_cancel ;;
+    enable)  cmd_enable ;;
+    disable) cmd_disable ;;
+    switch)  cmd_switch ;;
+    enabled) cmd_enabled ;;
     meter)   cmd_meter ;;
     daemon)  shift; cmd_daemon "$@" ;;
     mic)     shift; cmd_mic "$@" ;;
     history) shift; cmd_history "$@" ;;
     setup)   cmd_setup ;;
     status)  cmd_status ;;
-    *)       sed -n '2,15p' "$0"; exit 1 ;;
+    # the header comment block is the usage text; no line numbers to keep in sync
+    *)       awk 'NR > 1 && /^#/ { print; next } NR > 1 { exit }' "$0"; exit 1 ;;
 esac

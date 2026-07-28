@@ -27,6 +27,9 @@
 #DAEMON="true"
 #PORT="8595"
 
+# Port of the local polish backend (llama-server); `ohw disable` stops it too.
+#POLISH_PORT="8596"
+
 # Pipewire source node, empty = default microphone (see: wpctl status)
 #AUDIO_SOURCE=""
 

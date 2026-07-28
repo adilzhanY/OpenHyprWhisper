@@ -86,11 +86,49 @@ systemctl --user enable --now openhyprwhisper
 | `ohw start` / `ohw stop` | hold-to-talk pair: bind to press and release |
 | `ohw toggle` | start recording / stop, transcribe and type |
 | `ohw cancel` | discard the current recording (works mid-transcription too) |
+| `ohw enable` / `ohw disable` | turn dictation on/off entirely (see below) |
+| `ohw switch` | flip between the two — bind this to a UI toggle |
+| `ohw enabled` | print `on`/`off`; exits 1 when off |
 | `ohw daemon start\|stop\|status` | manage the warm-model daemon |
 | `ohw mic` | pick a microphone interactively (or `ohw mic <node-name>`) |
 | `ohw history [n]` | show the last n transcriptions (default 20) |
 | `ohw setup` | download the model, check dependencies |
 | `ohw status` | show state, model and daemon info |
+
+## Turning it off
+
+The warm daemons are the reason dictation is fast, but they hold roughly 3 GB of VRAM
+around the clock. When you are not dictating for a while, switch the whole thing off:
+
+```sh
+ohw disable   # stops whisper-server and the polish llama-server, kills the overlay,
+              # and makes the record keybind a no-op until you turn it back on
+ohw enable    # everything comes back
+```
+
+The switch is persistent (`~/.config/openhyprwhisper/disabled`) and it also flips the
+systemd units, so an off machine stays off across reboots.
+
+### Quick toggle for end-4/dots-hyprland
+
+[quickshell/end4](quickshell/end4) adds a **Voice dictation** button to the right
+sidebar's quick toggles, next to Wi-Fi and Bluetooth:
+
+```sh
+II=~/.config/quickshell/ii
+cp quickshell/end4/VoiceDictationToggle.qml        "$II/modules/common/models/quickToggles/"
+cp quickshell/end4/AndroidVoiceDictationToggle.qml "$II/modules/ii/sidebarRight/quickToggles/androidStyle/"
+```
+
+Then register the type in two upstream files (they are overwritten when you update
+dots-hyprland, so redo this after an update):
+
+- `modules/ii/sidebarRight/quickToggles/AndroidQuickPanel.qml` — add `"voiceDictation"` to `availableToggleTypes`
+- `modules/ii/sidebarRight/quickToggles/androidStyle/AndroidToggleDelegateChooser.qml` — add a `DelegateChoice { roleValue: "voiceDictation"; AndroidVoiceDictationToggle { … } }` block, copying any neighbouring choice
+
+Finally add the button to your grid: open the sidebar, click the pencil (edit mode) and
+click **Voice dictation**, or add `{"size": 2, "type": "voiceDictation"}` to
+`sidebar.quickToggles.android.toggles` in `~/.config/illogical-impulse/config.json`.
 
 ## Configuration
 
