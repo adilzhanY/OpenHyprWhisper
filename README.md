@@ -4,7 +4,13 @@
 
 Inspired by [OpenSuperWhisper](https://github.com/Starmel/OpenSuperWhisper) for macOS, rebuilt natively for the Hyprland/Wayland desktop.
 
-![recording pill](assets/screenshot.png)
+## ![recording pill](assets/screenshot.png)
+
+
+
+https://github.com/user-attachments/assets/e69fc1d7-85fe-4177-8e7e-4645513c10cc
+
+
 
 ## Features
 
