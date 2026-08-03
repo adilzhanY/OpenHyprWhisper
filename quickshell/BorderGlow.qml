@@ -8,7 +8,10 @@ import QtQuick
  * The web original follows the pointer: it derives an angle and an edge-proximity from the
  * cursor and lights the arc facing it. It also ships an `animated` mode that fakes a
  * pointer with a scripted sweep, which is the mode that makes sense on something nothing
- * is hovering. The timings below are that mode's, verbatim.
+ * is hovering. end-4's notifications use that mode's timings verbatim: one accelerating
+ * lap that dies away on its own, sized for a card that is on screen for a few seconds.
+ * The recording pill instead stays up for as long as the recording lasts, so here the
+ * light fades in once and then circles at a steady speed until it is switched off.
  *
  * Place it over the item being outlined, expanded by overhang on every side:
  *
@@ -44,13 +47,13 @@ ShaderEffect {
     property real edgeProximity: 0
     // Where the light sits, as a fraction of the perimeter clockwise from the middle of
     // the right edge. Wraps, so animating past 1 keeps going round.
-    property real sweepProgress: 0.306
+    property real sweepProgress: 0
 
-    // Runs the sweep. Restart it to play the effect again.
-    property alias sweeping: sweep.running
-    // A notification plays the sweep once on arrival; something long-lived like the
-    // recording pill sets Animation.Infinite so the light keeps going round.
-    property alias loops: sweep.loops
+    // Milliseconds for one full trip around the border. Higher is slower.
+    property int sweepDuration: 8000
+    // Runs the light. Clearing it leaves the glow where it stopped rather than fading it
+    // out - the pill takes both of them off screen together with its own opacity.
+    property bool sweeping: false
 
     readonly property vector2d size: Qt.vector2d(width, height)
 
@@ -58,38 +61,19 @@ ShaderEffect {
     blending: true
     visible: edgeProximity > 0
 
-    SequentialAnimation {
-        id: sweep
+    // Comes up once, then holds: nothing here ever takes the light back down, so it
+    // keeps going for as long as whatever it is outlining is on screen.
+    NumberAnimation on edgeProximity {
+        running: root.sweeping
+        from: 0; to: 1; duration: 700
+        easing.type: Easing.OutCubic
+    }
 
-        // The light comes up, travels a bit over a full turn - slow to start, coasting
-        // through the second half - then dies away while it is still moving.
-        ParallelAnimation {
-            NumberAnimation {
-                target: root; property: "edgeProximity"
-                from: 0; to: 1; duration: 500
-                easing.type: Easing.OutCubic
-            }
-            // The original's 110deg -> 465deg, expressed as fractions of the perimeter.
-            SequentialAnimation {
-                NumberAnimation {
-                    target: root; property: "sweepProgress"
-                    from: 0.306; to: 0.799; duration: 1500
-                    easing.type: Easing.InCubic
-                }
-                NumberAnimation {
-                    target: root; property: "sweepProgress"
-                    to: 1.292; duration: 2250
-                    easing.type: Easing.OutCubic
-                }
-            }
-            SequentialAnimation {
-                PauseAnimation { duration: 2500 }
-                NumberAnimation {
-                    target: root; property: "edgeProximity"
-                    to: 0; duration: 1500
-                    easing.type: Easing.InCubic
-                }
-            }
-        }
+    // Constant speed, and the shader wraps sweepProgress, so the end of one lap hands
+    // over to the start of the next with no seam and no pause.
+    NumberAnimation on sweepProgress {
+        running: root.sweeping
+        loops: Animation.Infinite
+        from: 0; to: 1; duration: root.sweepDuration
     }
 }

@@ -202,9 +202,8 @@ ShellRoot {
                 scale: pill.scale
                 opacity: pill.opacity
                 // A notification sweeps once on arrival; the pill lives for as long as the
-                // recording does, so the light keeps going round until it slides away.
+                // recording does, so the light keeps circling until it slides away.
                 sweeping: !root.exiting
-                loops: Animation.Infinite
             }
 
             Rectangle {
