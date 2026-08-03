@@ -177,18 +177,35 @@ ShellRoot {
             // so there it must span the full screen and ignore zones.
             exclusionMode: root.windowMode ? ExclusionMode.Ignore : ExclusionMode.Normal
             exclusiveZone: 0
-            anchors {
-                top: root.windowMode || root.atTop
-                bottom: root.windowMode || !root.atTop
-                left: true
-                right: true
-            }
-            margins.top: root.windowMode ? 0 : 12
-            margins.bottom: root.windowMode ? 0 : 12
+            // Anchored on all four sides in every mode, so the surface covers the whole
+            // usable area and the border glow's halo has room to spill around the pill
+            // instead of being clipped into a straight edge by the window bounds. The
+            // pill's own y carries the resting gap the margins used to provide.
+            anchors { top: true; bottom: true; left: true; right: true }
             color: "transparent"
             mask: Region {}   // fully click-through
 
-            implicitHeight: pill.height + 40
+            // 12px layer margin + 8px pill offset, as it was before the glow.
+            readonly property int edgeGap: 20
+
+            // The same light that sweeps around an end-4 notification when it arrives.
+            // Declared before the pill so it paints underneath: only the halo outside the
+            // pill should show, never the arc travelling across its face. It tracks the
+            // pill's scale and opacity so the two enter and leave as one object.
+            BorderGlow {
+                id: borderGlow
+                anchors.fill: pill
+                anchors.margins: -borderGlow.overhang
+                radius: pill.radius
+                glowColor: root.accentCol
+                glowRadius: 18   // the pill is 42px tall; the notification default swamps it
+                scale: pill.scale
+                opacity: pill.opacity
+                // A notification sweeps once on arrival; the pill lives for as long as the
+                // recording does, so the light keeps going round until it slides away.
+                sweeping: !root.exiting
+                loops: Animation.Infinite
+            }
 
             Rectangle {
                 id: pill
@@ -205,8 +222,8 @@ ShellRoot {
                         return hidden ? rest + 28 : rest;
                     }
                     return root.atTop
-                        ? (hidden ? -height - 24 : 8)
-                        : (hidden ? parent.height + 24 : parent.height - height - 8);
+                        ? (hidden ? -height - 24 : win.edgeGap)
+                        : (hidden ? parent.height + 24 : parent.height - height - win.edgeGap);
                 }
                 opacity: (root.exiting || (root.windowMode && !root.shown)) ? 0 : 1
                 width: content.implicitWidth + 40
