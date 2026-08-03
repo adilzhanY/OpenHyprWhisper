@@ -22,6 +22,14 @@ ShellRoot {
     property int elapsed: 0
     property var levels: Array(barCount).fill(0)
     readonly property int barCount: 16
+    // Tallest a bar may draw. The pill is 42 high, so this keeps 7px clear top and bottom.
+    readonly property int barMaxHeight: 28
+
+    // `ohw meter` reports linear RMS against a fixed ceiling, and ordinary speech only
+    // reaches about 0.15-0.35 of it - driving a bar straight off that leaves it barely off
+    // the floor. Raising it to a power below 1 stretches the quiet end where speech
+    // actually lives, the way a meter's dB scale does, while still landing 1.0 at 1.0.
+    function shapeLevel(v) { return Math.pow(v, 0.55); }
     property bool exiting: false
     property bool shown: false
     Component.onCompleted: shown = true   // flips after Behaviors are active -> slide-in animates
@@ -363,16 +371,27 @@ ShellRoot {
                         spacing: 2.5
                         visible: root.ohwState === "recording"
                         Layout.alignment: Qt.AlignVCenter
+                        // Fixed, so the tallest bar can never push the row around and
+                        // make the whole waveform bob as you speak.
+                        Layout.preferredHeight: root.barMaxHeight
                         Repeater {
                             model: root.barCount
                             Rectangle {
                                 required property int index
+                                readonly property real amp: root.shapeLevel(root.levels[index])
                                 width: 3
-                                height: 3 + root.levels[index] * 15
+                                height: 3 + amp * (root.barMaxHeight - 3)
                                 radius: 1.5
                                 anchors.verticalCenter: parent.verticalCenter
                                 color: Qt.rgba(root.textCol.r, root.textCol.g, root.textCol.b,
-                                               0.35 + root.levels[index] * 0.65)
+                                               0.35 + amp * 0.65)
+                                // The meter delivers a new value every ~33 ms, so this is
+                                // deliberately short: long enough to melt the steps into a
+                                // flowing wave, short enough that a bar still gets most of
+                                // the way to its target before the next one arrives.
+                                Behavior on height {
+                                    NumberAnimation { duration: 100; easing.type: Easing.OutCubic }
+                                }
                             }
                         }
                     }
