@@ -42,10 +42,13 @@ ShellRoot {
     // ------------------------------------------------------------------ theme
     property var colors: ({})
     property string fontFamily: "sans-serif"
-    // surface/on_surface track the active light/dark scheme; the dark values
-    // are only a fallback for systems without an end-4 palette
-    readonly property color surfaceCol: colors.surface_container_high ?? "#1c1c1e"
-    readonly property color textCol: colors.on_surface ?? "#f2f2f7"
+    // background/on_background track the active light/dark scheme; the dark values
+    // are only a fallback for systems without an end-4 palette.
+    // The pill floats on the wallpaper rather than sitting on a panel, so it takes the
+    // base background and not a raised container - the same call end-4 makes for its
+    // notification popups, and what lands on true black under the monochrome theme.
+    readonly property color surfaceCol: colors.background ?? "#1c1c1e"
+    readonly property color textCol: colors.on_background ?? "#f2f2f7"
     readonly property bool pillIsDark: (surfaceCol.r * 0.299 + surfaceCol.g * 0.587 + surfaceCol.b * 0.114) < 0.5
     readonly property color errBase: colors.error ?? "#ff453a"
     readonly property color dotCol: pillIsDark
