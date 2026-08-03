@@ -16,6 +16,11 @@
 // physical size whichever way the light is facing, and makes the sweep travel at a
 // constant speed rather than racing along the long edges.
 //
+// Two lights are lit rather than the original's one, kept exactly half a perimeter apart
+// so the pair always sits on opposite sides and the figure reads the same either way up,
+// like the two bulbs of an hourglass. Both ride the same sweepProgress, so the pair spins
+// as one rigid body.
+//
 // The item is drawn larger than the card by glowRadius on every side so the halo has room
 // to spill; the SDF is inset by the same amount.
 #version 440
@@ -40,8 +45,9 @@ layout(std140, binding = 0) uniform buf {
     float coneSpread;
     // 0 = no glow, 1 = full. The original drives this from cursor-to-edge distance.
     float edgeProximity;
-    // Where the light sits, as a fraction of the perimeter clockwise from the middle of
-    // the right edge. Wraps, so animating past 1 keeps going round.
+    // Where the leading light sits, as a fraction of the perimeter clockwise from the
+    // middle of the right edge; the second rides half a perimeter behind it. Wraps, so
+    // animating past 1 keeps going round.
     float sweepProgress;
     vec2 size;
     vec4 glowColor;
@@ -100,6 +106,15 @@ float perimeterCoord(vec2 point, vec2 core, float cornerRadius) {
     return travelled / max(perimeter, 1e-4);
 }
 
+// How lit the boundary point at `here` is by a light centred on `centre`, both measured as
+// fractions of the perimeter. The shorter way round is taken, so a light sitting near the
+// seam still spills across it instead of being cut in half.
+float arcLight(float here, float centre) {
+    float offset = abs(here - fract(centre));
+    offset = min(offset, 1.0 - offset);
+    return 1.0 - smoothstep(coneSpread * 0.25, coneSpread, offset);
+}
+
 void main() {
     vec2 point = (qt_TexCoord0 - 0.5) * size;
     vec2 halfExtent = max(size * 0.5 - vec2(overhang), vec2(0.001));
@@ -121,9 +136,9 @@ void main() {
 
     vec2 core = max(halfExtent - vec2(cornerRadius), vec2(0.0));
     float here = perimeterCoord(point, core, cornerRadius);
-    float offset = abs(here - fract(sweepProgress));
-    offset = min(offset, 1.0 - offset);
-    float lit = 1.0 - smoothstep(coneSpread * 0.25, coneSpread, offset);
+    // The pair, half a perimeter apart. max() rather than a sum so the two never add up to
+    // a brighter patch where their tails happen to meet.
+    float lit = max(arcLight(here, sweepProgress), arcLight(here, sweepProgress + 0.5));
 
     float intensity = clamp(max(rim, glow), 0.0, 1.0);
     float alpha = clamp(edgeProximity, 0.0, 1.0) * lit * intensity * glowColor.a * qt_Opacity;

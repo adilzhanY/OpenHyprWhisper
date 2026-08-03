@@ -1,9 +1,12 @@
 import QtQuick
 
 /**
- * Glowing border that sweeps around a rounded rect - the same effect the end-4 /
- * illogical-impulse notification popups use when they arrive, ported from React Bits'
- * BorderGlow (reactbits.dev/r/BorderGlow-JS-CSS).
+ * A pair of lights that spin around the border of a rounded rect, based on the effect the
+ * end-4 / illogical-impulse notification popups use when they arrive, itself ported from
+ * React Bits' BorderGlow (reactbits.dev/r/BorderGlow-JS-CSS).
+ *
+ * The two lights are held exactly half a perimeter apart, so they always face each other
+ * across the card - the hourglass figure - and spin as one.
  *
  * The web original follows the pointer: it derives an angle and an edge-proximity from the
  * cursor and lights the arc facing it. It also ships an `animated` mode that fakes a
@@ -11,7 +14,7 @@ import QtQuick
  * is hovering. end-4's notifications use that mode's timings verbatim: one accelerating
  * lap that dies away on its own, sized for a card that is on screen for a few seconds.
  * The recording pill instead stays up for as long as the recording lasts, so here the
- * light fades in once and then circles at a steady speed until it is switched off.
+ * lights fade in once and then circle at a steady speed until they are switched off.
  *
  * Place it over the item being outlined, expanded by overhang on every side:
  *
@@ -23,7 +26,7 @@ import QtQuick
  *     }
  *
  * Declare it before the card so it paints underneath: only the halo outside the card
- * should show, never the arc travelling across its face.
+ * should show, never the arcs travelling across its face.
  */
 ShaderEffect {
     id: root
@@ -39,14 +42,15 @@ ShaderEffect {
     // is exponential and still carries a few percent alpha one glowRadius out; anchor the
     // item with `anchors.margins: -overhang` or its rectangle becomes visible.
     property real overhang: glowRadius * 2
-    // Half-length of the lit arc as a fraction of the perimeter. 0.5 lights the whole
-    // border. Measured in arc length rather than angle, so the lit patch stays the same
-    // physical size on a long edge and on an end cap.
+    // Half-length of each lit arc as a fraction of the perimeter. Since there are two of
+    // them, 0.25 lights the whole border. Measured in arc length rather than angle, so a
+    // lit patch stays the same physical size on a long edge and on an end cap.
     property real coneSpread: 0.10
     // Overall strength, 0-1. Driven by cursor distance in the original.
     property real edgeProximity: 0
-    // Where the light sits, as a fraction of the perimeter clockwise from the middle of
-    // the right edge. Wraps, so animating past 1 keeps going round.
+    // Where the leading light sits, as a fraction of the perimeter clockwise from the
+    // middle of the right edge; the other rides half a perimeter behind it. Wraps, so
+    // animating past 1 keeps going round.
     property real sweepProgress: 0
 
     // Milliseconds for one full trip around the border. Higher is slower.

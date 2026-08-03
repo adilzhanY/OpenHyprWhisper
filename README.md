@@ -11,7 +11,7 @@ Inspired by [OpenSuperWhisper](https://github.com/Starmel/OpenSuperWhisper) for 
 - **Works everywhere** — browser, terminal, chat apps: anything with a focused text input (like espanso, but for your voice)
 - **Fast** — whisper.cpp with CUDA/Vulkan; with the warm daemon a sentence transcribes in ~0.2 s
 - **Multilingual** — auto language detection per utterance, great for mixed EN/RU/DE/KK speech
-- **A pretty status pill** — animated recording indicator with a live waveform, elapsed time, a glowing border sweep and state transitions, rendered by Quickshell; pin it to a screen edge or let it attach to the focused window so it appears where you're dictating
+- **A pretty status pill** — animated recording indicator with a live waveform, elapsed time, a spinning border glow and state transitions, rendered by Quickshell; pin it to a screen edge or let it attach to the focused window so it appears where you're dictating
 - **Mic picker & history** — `ohw mic` selects the input device, `ohw history` recovers past transcriptions
 - **Theme-aware** — on [end-4/dots-hyprland](https://github.com/end-4/dots-hyprland) the pill follows your Material palette (light and dark) and font live; falls back to a neutral dark look elsewhere
 - **Three correction layers**
@@ -187,7 +187,7 @@ The overlay reads, live:
 - `~/.local/state/quickshell/user/generated/colors.json` — end-4's Material 3 palette; switch wallpaper or light/dark mode and the pill recolors instantly
 - `~/.config/illogical-impulse/config.json` — `appearance.fonts.main`
 
-The pill respects your bar's reserved space, so it never overlaps it. Animation curves are Material 3 expressive, matching end-4's shell. A light sweeps around its border in your accent color, using the same border-glow shader end-4 notifications use when they pop up. Without end-4 it uses a dark fallback palette.
+The pill respects your bar's reserved space, so it never overlaps it. Animation curves are Material 3 expressive, matching end-4's shell. Two lights spin around its border in your accent color, held on opposite sides like the two bulbs of an hourglass, drawn with a border-glow shader adapted from the one end-4 notifications use when they pop up. Without end-4 it uses a dark fallback palette.
 
 ## Testing
 
