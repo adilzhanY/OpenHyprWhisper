@@ -518,11 +518,9 @@ cmd_enabled() {
 set_audio_source() { # persist AUDIO_SOURCE in the config file
     local value="$1" cfg="$CONFIG_DIR/config"
     touch "$cfg"
-    if grep -qE '^#?AUDIO_SOURCE=' "$cfg"; then
-        sed -i "s|^#\?AUDIO_SOURCE=.*|AUDIO_SOURCE=\"$value\"|" "$cfg"
-    else
-        printf 'AUDIO_SOURCE="%s"\n' "$value" >> "$cfg"
-    fi
+    # the config is sourced by bash: drop the old line, append the value shell-quoted
+    sed -i '/^AUDIO_SOURCE=/d' "$cfg"
+    printf 'AUDIO_SOURCE=%q\n' "$value" >> "$cfg"
     echo "AUDIO_SOURCE set to: ${value:-<default mic>}"
 }
 

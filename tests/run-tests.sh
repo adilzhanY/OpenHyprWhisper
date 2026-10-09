@@ -191,6 +191,14 @@ run_unit() {
     assert_eq "enable reports on" "on" "$("$OHW" enabled)"
     rm -f "$CONFIG_DIR/config"
 
+    # --- mic choice is written shell-quoted into the sourced config
+    local odd='mic "x" $(touch '"$TESTTMP"'/pwned) | & y'
+    set_audio_source "$odd" >/dev/null
+    assert_eq "mic name survives the config round trip" "$odd" \
+        "$(AUDIO_SOURCE=; . "$CONFIG_DIR/config"; printf '%s' "$AUDIO_SOURCE")"
+    [ -e "$TESTTMP/pwned" ] && fail "mic name is never run as code" || pass "mic name is never run as code"
+    rm -f "$CONFIG_DIR/config"
+
     # --- service templating
     sed -e "s|@OHW_ROOT@|/some/where|" "$OHW_ROOT/assets/openhyprwhisper.service" > "$TESTTMP/svc"
     assert_contains "service ExecStart is templated" "/some/where/bin/ohw daemon run" "$(cat "$TESTTMP/svc")"
