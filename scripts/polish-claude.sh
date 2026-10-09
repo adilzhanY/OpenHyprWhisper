@@ -37,6 +37,18 @@ Output ONLY the corrected text, nothing else."
         ;;
 esac
 
-claude -p --model haiku "$instruction
-
-Text: $text"
+# No tools: the dictated text is untrusted input (anyone talking near the mic),
+# and the answer gets typed into the focused window. The prompt goes in on
+# stdin because --tools takes a list and would swallow a positional prompt.
+# Claude Code plugins can add results of their own (with an "origin") to the
+# output, so take the model's answer from the event stream, never plain stdout.
+printf '%s\n\nText: %s' "$instruction" "$text" \
+    | claude -p --model haiku --tools "" --output-format stream-json --verbose \
+    | python3 -c '
+import json, sys
+answer = None   # read to the end: exiting early would SIGPIPE claude and fail the pipeline
+for line in sys.stdin:
+    d = json.loads(line) if line.startswith("{") else {}
+    if d.get("type") == "result" and not d.get("origin") and not d.get("is_error"):
+        answer = d["result"]
+sys.exit(1) if answer is None else print(answer)'
