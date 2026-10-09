@@ -1,0 +1,69 @@
+# Maintainer: adilzhanY <adilzhan1112@gmail.com>
+
+pkgname=openhyprwhisper-git
+pkgver=r29.33ec6fd
+pkgrel=1
+pkgdesc='Fast, fully local voice dictation for Hyprland - press a key, speak, and whisper.cpp types your words into any focused text field'
+arch=('any')
+url='https://github.com/adilzhanY/OpenHyprWhisper'
+license=('MIT')
+# whisper-cpp provides /usr/bin/whisper-cli and /usr/bin/whisper-server, which
+# bin/ohw picks up off PATH - so nothing is vendored or compiled here.
+depends=('bash' 'curl' 'pipewire' 'python' 'whisper-cpp' 'wl-clipboard' 'wtype')
+makedepends=('git')
+optdepends=('quickshell: animated recording overlay pill'
+            'ydotool: text injection where wtype does not work (set INJECT in the config)'
+            'llama.cpp: local LLM polish backend, expected on 127.0.0.1:8596')
+provides=('openhyprwhisper')
+conflicts=('openhyprwhisper')
+install="${pkgname}.install"
+source=("${pkgname}::git+${url}.git")
+sha256sums=('SKIP')
+
+pkgver() {
+	cd "${pkgname}"
+	printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+package() {
+	cd "${pkgname}"
+
+	# bin/ohw resolves OHW_ROOT as the parent of its own realpath, and reaches
+	# for $OHW_ROOT/scripts and $OHW_ROOT/quickshell at runtime. So the tree has
+	# to stay intact under one prefix; /usr/bin/ohw is a symlink into it and
+	# realpath() follows the link back here rather than to /usr/bin.
+	local libdir="${pkgdir}/usr/lib/openhyprwhisper"
+
+	install -Dm755 bin/ohw "${libdir}/bin/ohw"
+
+	install -Dm755 -t "${libdir}/scripts" \
+		scripts/mic-meter.py \
+		scripts/polish-claude.sh \
+		scripts/polish-local.py \
+		scripts/wav-peak.py
+
+	install -Dm644 -t "${libdir}/quickshell" \
+		quickshell/overlay.qml \
+		quickshell/BorderGlow.qml
+	# The .qsb is what Qt actually loads; the .frag is kept beside it as source.
+	install -Dm644 -t "${libdir}/quickshell/shaders" \
+		quickshell/shaders/borderglow.frag.qsb \
+		quickshell/shaders/borderglow.frag
+	install -Dm644 -t "${libdir}/quickshell/end4" quickshell/end4/*.qml
+
+	install -d "${pkgdir}/usr/bin"
+	ln -s ../lib/openhyprwhisper/bin/ohw "${pkgdir}/usr/bin/ohw"
+
+	# The shipped unit is templated for a source checkout; here the CLI is on PATH.
+	sed 's|@OHW_ROOT@/bin/ohw|/usr/bin/ohw|' assets/openhyprwhisper.service |
+		install -Dm644 /dev/stdin "${pkgdir}/usr/lib/systemd/user/openhyprwhisper.service"
+
+	# ohw reads ~/.config/openhyprwhisper/config only if it exists, so these stay
+	# examples for the user to copy rather than anything the package activates.
+	install -Dm644 -t "${pkgdir}/usr/share/openhyprwhisper" \
+		config.example \
+		replacements.example
+
+	install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+	install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

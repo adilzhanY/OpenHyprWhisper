@@ -1,0 +1,31 @@
+post_install() {
+	cat <<'EOF'
+
+  One-time setup:
+
+    ohw setup                  # downloads the speech model (~570 MB) to ~/.local/share
+
+  Bind a key (hyprland.conf):
+
+    bind  = , mouse:274, exec, ohw start     # hold to talk
+    bindr = , mouse:274, exec, ohw stop
+    bind  = SUPER, Y, exec, ohw toggle
+
+  Keep the model warm so transcription takes ~0.2 s instead of ~8 s:
+
+    systemctl --user enable --now openhyprwhisper
+
+  Optional config (ohw runs on defaults without it):
+
+    mkdir -p ~/.config/openhyprwhisper
+    cp /usr/share/openhyprwhisper/config.example       ~/.config/openhyprwhisper/config
+    cp /usr/share/openhyprwhisper/replacements.example ~/.config/openhyprwhisper/replacements
+
+  Install quickshell for the animated recording overlay.
+
+EOF
+}
+
+post_upgrade() {
+	post_install
+}
