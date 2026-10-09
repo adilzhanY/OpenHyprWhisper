@@ -199,6 +199,14 @@ run_unit() {
     [ -e "$TESTTMP/pwned" ] && fail "mic name is never run as code" || pass "mic name is never run as code"
     rm -f "$CONFIG_DIR/config"
 
+    # --- stop leaves no audio behind (here via the silence gate)
+    write_state recording
+    gen_wav "$WAV_FILE" 1 0
+    "$OHW" stop >/dev/null 2>&1
+    assert_eq "stop on silence ends empty" "empty" "$(read_state)"
+    assert_eq "stop leaves no audio on disk" "" "$(find "$RUNTIME_DIR" -name '*.wav')"
+    write_state idle
+
     # --- service templating
     sed -e "s|@OHW_ROOT@|/some/where|" "$OHW_ROOT/assets/openhyprwhisper.service" > "$TESTTMP/svc"
     assert_contains "service ExecStart is templated" "/some/where/bin/ohw daemon run" "$(cat "$TESTTMP/svc")"

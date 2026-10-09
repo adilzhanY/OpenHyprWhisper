@@ -26,6 +26,7 @@ DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/openhyprwhisper"
 MODELS_DIR="$DATA_DIR/models"
 LOG_FILE="$RUNTIME_DIR/ohw.log"
 
+umask 077   # audio, history and state are private, even under the /tmp fallback
 mkdir -p "$RUNTIME_DIR" "$CONFIG_DIR" "$MODELS_DIR"
 
 # ---------------------------------------------------------------------------
@@ -320,6 +321,12 @@ cmd_stop() {
     acquire_lock
     [ "$(read_state)" != "recording" ] && exit 0
     stop_recorder
+    # Own copy of the audio: a new recording may start (and reuse audio.wav)
+    # as soon as the lock is released, and the dictated audio must not stay on disk
+    local wav="$RUNTIME_DIR/audio.$$.wav"
+    mv "$WAV_FILE" "$wav" 2>/dev/null || true
+    WAV_FILE="$wav"
+    trap 'rm -f "$WAV_FILE"' EXIT
     write_state transcribing
     release_lock   # the slow part below must not block the next toggle
 
