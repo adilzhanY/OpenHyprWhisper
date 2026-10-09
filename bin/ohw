@@ -360,7 +360,8 @@ cmd_stop() {
         if polished=$(printf '%s' "$text" | OHW_POLISH_MODE="$POSTPROCESS_MODE" timeout "$POSTPROCESS_TIMEOUT" "$POSTPROCESS_CMD" 2>>"$LOG_FILE") \
             && [ -n "$polished" ]; then
             log "polished: $polished"
-            text="$polished"
+            # same cleanup as the raw transcript: a newline from the LLM would be typed as Enter
+            text=$(printf '%s' "$polished" | clean_text)
         else
             log "postprocess failed or timed out, using raw transcript"
         fi
