@@ -1,3 +1,4 @@
 vendor/
 *.wav
 __pycache__/
+.lavish/

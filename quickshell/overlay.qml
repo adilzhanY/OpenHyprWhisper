@@ -34,6 +34,7 @@ ShellRoot {
     property bool shown: false
     Component.onCompleted: shown = true   // flips after Behaviors are active -> slide-in animates
 
+    readonly property bool hasHugeicons: Qt.fontFamilies().includes("Hugeicons Rounded")
     readonly property bool hasSymbols: Qt.fontFamilies().includes("Material Symbols Rounded")
     readonly property string position: Quickshell.env("OHW_OVERLAY_POSITION") || "bottom"
     readonly property bool atTop: position === "top"
@@ -337,8 +338,8 @@ ShellRoot {
                         Text {
                             anchors.centerIn: parent
                             visible: root.ohwState === "done"
-                            text: root.hasSymbols ? "check_circle" : "✓"
-                            font.family: root.hasSymbols ? "Material Symbols Rounded" : root.fontFamily
+                            text: root.hasHugeicons ? "checkmark-circle-02" : root.hasSymbols ? "check_circle" : "✓"
+                            font.family: root.hasHugeicons ? "Hugeicons Rounded" : root.hasSymbols ? "Material Symbols Rounded" : root.fontFamily
                             font.pixelSize: 16
                             color: root.accentCol
                             scale: visible ? 1 : 0.4
