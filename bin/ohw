@@ -239,12 +239,12 @@ transcribe() { # -> prints transcribed text
     if [ "$DAEMON" = "true" ] && curl -sf -m 1 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
         local extra=()
         [ "$TRANSLATE" = "true" ] && extra+=(-F translate=true)
-        [ -n "$INITIAL_PROMPT" ] && extra+=(-F "prompt=$INITIAL_PROMPT")
+        [ -n "$INITIAL_PROMPT" ] && extra+=(--form-string "prompt=$INITIAL_PROMPT")
         curl -sf -m 60 "http://127.0.0.1:$PORT/inference" \
             -F "file=@$WAV_FILE" \
             -F temperature=0.0 \
             -F response_format=text \
-            -F "language=$LANGUAGE" \
+            --form-string "language=$LANGUAGE" \
             "${extra[@]}" \
             2>>"$LOG_FILE" && return 0
         log "daemon inference failed, falling back to cli"
