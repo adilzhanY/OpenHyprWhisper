@@ -186,6 +186,7 @@ systemctl --user enable --now openhyprwhisper
 
 | Option | Default | Meaning |
 |---|---|---|
+| `ENGINE` | `whisper` | `whisper` (whisper.cpp) or `parakeet` (Parakeet TDT, e.g. `moondream/parakeet-ultra`, see below) |
 | `MODEL` | `large-v3-turbo-q5_0` | any ggml model name or absolute path |
 | `LANGUAGE` | `auto` | language code, or auto-detect per utterance |
 | `INJECT` | `type` | `type` / `paste` / `clipboard` |
@@ -201,6 +202,18 @@ Every option can also be overridden per invocation with an `OHW_*` environment
 variable. **`~/.config/openhyprwhisper/replacements`** (see
 [replacements.example](replacements.example)) holds the deterministic fixes:
 one `misheard = corrected` rule per line, case-insensitive.
+
+## Parakeet engine
+
+`ENGINE="parakeet"` swaps whisper-server for [scripts/parakeet-server.py](scripts/parakeet-server.py),
+which speaks the same `/health` and `/inference` API. It needs a Python venv with
+`torch` (a CUDA build that matches your GPU), `transformers>=5.6`, `soundfile` and
+`numpy` at `PARAKEET_PYTHON`, and a model folder at `PARAKEET_MODEL` holding the
+weights plus `processor_config.json`. `moondream/parakeet-ultra` ships without that
+file; copy it from `nvidia/parakeet-tdt-0.6b-v3` (same tokenizer). On an RTX 5070
+a 5 s phrase takes about 50 ms and the server holds about 3 GB of VRAM. Parakeet
+detects the language itself (25 European languages) and ignores `INITIAL_PROMPT`
+and `LANGUAGE`, so lean on `replacements` and the LLM polish for names.
 
 ## LLM polish backends
 

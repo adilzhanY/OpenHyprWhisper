@@ -11,7 +11,7 @@
 #   ohw disable     turn dictation off: stop every daemon, free the VRAM
 #   ohw switch      flip between enable and disable (bind this to a UI toggle)
 #   ohw enabled     print on|off; exit 0 when on, 1 when off
-#   ohw daemon      manage the whisper-server daemon (start|stop|status|run)
+#   ohw daemon      manage the speech daemon (start|stop|status|run)
 #   ohw mic         pick the microphone (interactive), or: ohw mic <node-name>
 #   ohw history     show recent transcriptions (default 20): ohw history [n]
 #   ohw meter       print mic RMS levels to stdout (used by the overlay)
@@ -32,7 +32,10 @@ mkdir -p "$RUNTIME_DIR" "$CONFIG_DIR" "$MODELS_DIR"
 # ---------------------------------------------------------------------------
 # Configuration (defaults, overridable in ~/.config/openhyprwhisper/config)
 # ---------------------------------------------------------------------------
+ENGINE="whisper"              # whisper | parakeet (Parakeet TDT via scripts/parakeet-server.py)
 MODEL="large-v3-turbo-q5_0"   # model name (ggml-<name>.bin in models dir) or absolute path
+PARAKEET_MODEL="$MODELS_DIR/parakeet-ultra"          # folder with the HF weights + processor_config.json
+PARAKEET_PYTHON="$DATA_DIR/parakeet/.venv/bin/python" # a venv with torch, transformers, soundfile
 LANGUAGE="auto"               # whisper language code, or "auto"
 TRANSLATE="false"             # translate to English instead of transcribing
 INJECT="type"                 # type | paste | clipboard
@@ -57,6 +60,7 @@ POSTPROCESS_TIMEOUT="25"      # seconds before giving up and using the raw trans
 [ -f "$CONFIG_DIR/config" ] && . "$CONFIG_DIR/config"
 
 # Environment overrides (OHW_*) win over the config file - handy for scripting
+ENGINE="${OHW_ENGINE:-$ENGINE}"
 MODEL="${OHW_MODEL:-$MODEL}"
 LANGUAGE="${OHW_LANGUAGE:-$LANGUAGE}"
 INJECT="${OHW_INJECT:-$INJECT}"
@@ -426,17 +430,23 @@ cmd_meter() {
 # ---------------------------------------------------------------------------
 cmd_daemon() {
     local action="${1:-status}"
-    local server; server=$(find_bin whisper-server) || die "whisper-server not found. Run: ./install.sh"
+    local cmd
+    if [ "$ENGINE" = "parakeet" ]; then
+        [ -x "$PARAKEET_PYTHON" ] || die "PARAKEET_PYTHON not found: $PARAKEET_PYTHON"
+        cmd=("$PARAKEET_PYTHON" "$OHW_ROOT/scripts/parakeet-server.py" --model "$PARAKEET_MODEL" --host 127.0.0.1 --port "$PORT")
+    else
+        local server; server=$(find_bin whisper-server) || die "whisper-server not found. Run: ./install.sh"
+        cmd=("$server" -m "$(resolve_model)" --host 127.0.0.1 --port "$PORT" -t "$THREADS" -l "$LANGUAGE")
+    fi
     case "$action" in
         run)  # foreground, for systemd
-            exec "$server" -m "$(resolve_model)" --host 127.0.0.1 --port "$PORT" -t "$THREADS" -l "$LANGUAGE"
+            exec "${cmd[@]}"
             ;;
         start)
             if curl -sf -m 1 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
                 echo "daemon already running on port $PORT"; return 0
             fi
-            setsid "$server" -m "$(resolve_model)" --host 127.0.0.1 --port "$PORT" -t "$THREADS" -l "$LANGUAGE" \
-                >>"$LOG_FILE" 2>&1 9>&- &
+            setsid "${cmd[@]}" >>"$LOG_FILE" 2>&1 9>&- &
             echo $! > "$DAEMON_PID_FILE"
             # wait for the model to load; catches port conflicts and crashes
             for _ in $(seq 1 40); do
@@ -448,7 +458,7 @@ cmd_daemon() {
             ;;
         stop)
             [ -f "$DAEMON_PID_FILE" ] && kill "$(cat "$DAEMON_PID_FILE")" 2>/dev/null || true
-            pkill -f "whisper-server.*--port $PORT" 2>/dev/null || true
+            pkill -f "(whisper|parakeet)-server.*--port $PORT" 2>/dev/null || true
             rm -f "$DAEMON_PID_FILE"
             echo "daemon stopped"
             ;;
@@ -501,7 +511,7 @@ cmd_disable() {
         done
     fi
     # Daemons started by hand (`ohw daemon start`) are not systemd's business
-    pkill -f "whisper-server.*--port $PORT" 2>/dev/null || true
+    pkill -f "(whisper|parakeet)-server.*--port $PORT" 2>/dev/null || true
     pkill -f "llama-server.*--port $POLISH_PORT" 2>/dev/null || true
     rm -f "$DAEMON_PID_FILE"
 

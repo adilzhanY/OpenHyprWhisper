@@ -2,6 +2,13 @@
 # Copy to ~/.config/openhyprwhisper/config and edit.
 # This file is sourced by bash - keep it simple: KEY="value"
 
+# Speech engine: "whisper" (whisper.cpp, default) or "parakeet" (NVIDIA Parakeet TDT
+# family, e.g. moondream/parakeet-ultra, through scripts/parakeet-server.py).
+# Parakeet: 25 European languages, auto-detected, no INITIAL_PROMPT, about 3 GB VRAM.
+#ENGINE="whisper"
+#PARAKEET_MODEL="$HOME/.local/share/openhyprwhisper/models/parakeet-ultra"
+#PARAKEET_PYTHON="$HOME/.local/share/openhyprwhisper/parakeet/.venv/bin/python"
+
 # Model: name of ggml-<name>.bin in ~/.local/share/openhyprwhisper/models,
 # or an absolute path to a .bin file.
 # Good options: large-v3-turbo-q5_0 (default, best), small, base.en (fastest)
