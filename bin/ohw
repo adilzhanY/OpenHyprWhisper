@@ -368,7 +368,7 @@ cmd_stop() {
     if [ "$POSTPROCESS" = "true" ] && [ -n "$text" ]; then
         write_state polishing
         local polished
-        if polished=$(printf '%s' "$text" | OHW_POLISH_MODE="$POSTPROCESS_MODE" timeout "$POSTPROCESS_TIMEOUT" "$POSTPROCESS_CMD" 2>>"$LOG_FILE") \
+        if polished=$(printf '%s' "$text" | OHW_POLISH_MODE="$POSTPROCESS_MODE" OHW_POLISH_VOCAB="$INITIAL_PROMPT" timeout "$POSTPROCESS_TIMEOUT" "$POSTPROCESS_CMD" 2>>"$LOG_FILE") \
             && [ -n "$polished" ]; then
             log "polished: $polished"
             # same cleanup as the raw transcript: a newline from the LLM would be typed as Enter

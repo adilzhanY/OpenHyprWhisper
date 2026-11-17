@@ -87,6 +87,20 @@ PY
 run_unit() {
     echo "== unit =="
 
+    # --- light polish guard: only vocabulary fixes survive
+    local guard
+    guard() { python3 -c 'import importlib.util as u,sys
+s=u.spec_from_file_location("p",sys.argv[1]);m=u.module_from_spec(s);s.loader.exec_module(m)
+print(m.keep_vocab_fixes(sys.argv[2],sys.argv[3],"Claude Code, Hyprland, JSON"))' "$OHW_ROOT/scripts/polish-local.py" "$1" "$2"; }
+    assert_eq "light guard reverts a typo the LLM made" \
+        "switch back to English because" "$(guard "switch back to English because" "switch back to Englis because")"
+    assert_eq "light guard keeps a vocabulary fix" \
+        "I use Claude Code on Hyprland." "$(guard "I use cloud code on hyper land." "I use Claude Code on Hyprland.")"
+    assert_eq "light guard reverts reworded grammar" \
+        "yeah i think its cool" "$(guard "yeah i think its cool" "Yeah, I think it's cool.")"
+    assert_eq "light guard keeps the raw text when nothing changed" \
+        "plain text here" "$(guard "plain text here" "plain text here")"
+
     # --- scripts parse
     local f ok=1
     for f in "$OHW" "$OHW_ROOT/install.sh" "$OHW_ROOT/tests/run-tests.sh"; do
